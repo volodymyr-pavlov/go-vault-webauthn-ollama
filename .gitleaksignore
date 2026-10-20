@@ -1,0 +1,3 @@
+# The test secret of the Vault TOTP engine test, a Base32 test vector and no real secret. The test builds it from bytes
+# now, but gitleaks also scans the history, where commit a9f01b5 holds it as a literal.
+a9f01b55630c826d537c8fa7297b38c13386876d:apps/backend/vault/client_integration_test.go:generic-api-key:309

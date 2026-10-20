@@ -4,6 +4,7 @@ package vault
 
 import (
 	"context"
+	"encoding/base32"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -306,7 +307,7 @@ func TestAuthenticatorWithRealVault(t *testing.T) {
 	}
 
 	// A key made from a secret gives a code of the digits that the key asks for, and the secret does not come back.
-	secret := "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+	secret := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString([]byte("12345678901234567890"))
 	if _, err := client.WriteOne(ctx, es.AuthenticatorKey{
 		Name:      "u1-a1",
 		Secret:    secret,
