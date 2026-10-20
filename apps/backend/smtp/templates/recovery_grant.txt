@@ -1,0 +1,2 @@
+Your recovery request is approved. Use this token to enroll a new factor: {{.Token}}
+The token works once and is valid for {{.TTL}}. If this was not you, contact support now.

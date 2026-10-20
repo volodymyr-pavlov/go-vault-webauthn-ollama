@@ -1,0 +1,4 @@
+Someone asked to recover your account, which means to get in without a passkey, a code or a recovery code.
+Nothing happens for {{.TTL}}. After that, a person checks the request.
+If this was not you, cancel it now with this token: {{.Token}}
+If you lose all your factors, you can ignore this message.

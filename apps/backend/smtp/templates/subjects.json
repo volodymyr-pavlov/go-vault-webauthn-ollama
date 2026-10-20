@@ -1,0 +1,15 @@
+{
+  "registry_token": "Verify your registration",
+  "registry_taken": "Someone tried to register with your address",
+  "passkey_added": "A passkey was added to your account",
+  "passkey_removed": "A passkey was removed from your account",
+  "passkey_disabled": "A passkey was disabled",
+  "totp_added": "A code generator was added to your account",
+  "totp_removed": "The code generator was removed from your account",
+  "recovery_issued": "New recovery codes were issued",
+  "recovery_used": "A recovery code was used",
+  "recovery_requested": "Someone asked to recover your account",
+  "recovery_grant": "Your recovery request is approved",
+  "login_refused": "A login to your account was refused",
+  "account_deleted": "Your account was deleted"
+}
