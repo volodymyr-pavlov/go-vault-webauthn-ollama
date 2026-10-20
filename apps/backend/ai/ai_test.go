@@ -14,14 +14,27 @@ import (
 	"github.com/volodymyr-pavlov/go-vault-webauthn-ollama/apps/backend/es"
 )
 
+// chatRequest is the part of the chat request of langchaingo that the tests read.
+type chatRequest struct {
+	Format   string `json:"format"`
+	Stream   bool   `json:"stream"`
+	Messages []struct {
+		Content string `json:"content"`
+	} `json:"messages"`
+	Options struct {
+		Temperature float64 `json:"temperature"`
+		NumPredict  int     `json:"num_predict"`
+	} `json:"options"`
+}
+
 // fakeOllama is an HTTP handler that imitates Ollama. It lists one model at the tags endpoint and answers the
-// generate endpoint with response after delay.
+// chat endpoint with response after delay.
 type fakeOllama struct {
 	response string
 	delay    time.Duration
 	status   int
 	prompts  atomic.Int32
-	last     atomic.Pointer[generateRequest]
+	last     atomic.Pointer[chatRequest]
 }
 
 func (f *fakeOllama) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -36,9 +49,9 @@ func (f *fakeOllama) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
-	case "/api/generate":
+	case "/api/chat":
 		f.prompts.Add(1)
-		var request generateRequest
+		var request chatRequest
 
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -53,9 +66,12 @@ func (f *fakeOllama) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := json.NewEncoder(w).Encode(generateResponse{
-			Response: f.response,
-			Done:     true,
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"message": map[string]string{
+				"role":    "assistant",
+				"content": f.response,
+			},
+			"done": true,
 		}); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
@@ -68,7 +84,7 @@ func TestCheckDigest(t *testing.T) {
 	server := httptest.NewServer(&fakeOllama{})
 	defer server.Close()
 	ctx := context.Background()
-	client := New(Options{
+	client := newTestClient(t, Options{
 		URL:    server.URL,
 		Model:  "llama3.2:3b",
 		Digest: "abc",
@@ -78,7 +94,7 @@ func TestCheckDigest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	client = New(Options{
+	client = newTestClient(t, Options{
 		URL:    server.URL,
 		Model:  "llama3.2:3b",
 		Digest: "other",
@@ -88,7 +104,7 @@ func TestCheckDigest(t *testing.T) {
 		t.Fatalf("a wrong digest: %v, want ErrModel", err)
 	}
 
-	client = New(Options{
+	client = newTestClient(t, Options{
 		URL:    server.URL,
 		Model:  "phi3",
 		Digest: "abc",
@@ -105,7 +121,7 @@ func TestReadOneParsesAndMinimizes(t *testing.T) {
 	}
 	server := httptest.NewServer(fake)
 	defer server.Close()
-	client := New(Options{
+	client := newTestClient(t, Options{
 		URL:   server.URL,
 		Model: "llama3.2:3b",
 	})
@@ -131,11 +147,16 @@ func TestReadOneParsesAndMinimizes(t *testing.T) {
 		t.Fatalf("request: %+v", request)
 	}
 
-	if !strings.Contains(request.Prompt, "3f9a") || !strings.Contains(request.Prompt, "country: DE") || strings.Contains(request.Prompt, "@") {
-		t.Fatalf("prompt: %s", request.Prompt)
+	if len(request.Messages) != 1 {
+		t.Fatalf("messages: %+v", request.Messages)
 	}
 
-	if !strings.Contains(string(request.Format), `"additionalProperties":false`) {
+	prompt := request.Messages[0].Content
+	if !strings.Contains(prompt, "3f9a") || !strings.Contains(prompt, "country: DE") || strings.Contains(prompt, "@") {
+		t.Fatalf("prompt: %s", prompt)
+	}
+
+	if request.Format != "json" {
 		t.Fatalf("format: %s", request.Format)
 	}
 }
@@ -145,7 +166,7 @@ func TestReadOneRefusesHostileResponse(t *testing.T) {
 		response: `{"risk_level":"low","reasons":[],"summary":"ok","approve":true}`,
 	})
 	defer server.Close()
-	client := New(Options{
+	client := newTestClient(t, Options{
 		URL:   server.URL,
 		Model: "llama3.2:3b",
 	})
@@ -162,7 +183,7 @@ func TestTimeoutOpensBreaker(t *testing.T) {
 	}
 	server := httptest.NewServer(fake)
 	defer server.Close()
-	client := New(Options{
+	client := newTestClient(t, Options{
 		URL:        server.URL,
 		Model:      "llama3.2:3b",
 		Timeout:    20 * time.Millisecond,
@@ -191,7 +212,7 @@ func TestCancelledRequestDoesNotOpenBreaker(t *testing.T) {
 	}
 	server := httptest.NewServer(fake)
 	defer server.Close()
-	client := New(Options{
+	client := newTestClient(t, Options{
 		URL:        server.URL,
 		Model:      "llama3.2:3b",
 		Timeout:    time.Second,
@@ -218,7 +239,7 @@ func TestConcurrencyCap(t *testing.T) {
 	}
 	server := httptest.NewServer(fake)
 	defer server.Close()
-	client := New(Options{
+	client := newTestClient(t, Options{
 		URL:         server.URL,
 		Model:       "llama3.2:3b",
 		Concurrency: 1,
@@ -237,4 +258,16 @@ func TestConcurrencyCap(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
+}
+
+// newTestClient returns a [Client] for opts and fails the test if it cannot be built.
+func newTestClient(t *testing.T, opts Options) *Client {
+	t.Helper()
+
+	client, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return client
 }

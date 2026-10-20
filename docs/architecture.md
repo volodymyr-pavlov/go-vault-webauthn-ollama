@@ -68,7 +68,7 @@ must not have. A middleware checks the permission before the handler runs, so a 
 | `authtest`         | A software authenticator for the tests.                                                                        |
 | `smtp`             | The mail client and the sender that writes each message from an embedded template.                             |
 | `totp`             | RFC 6238, with the test vectors of the RFC.                                                                    |
-| `ai`               | The risk rules, the decision, the strict check of an advice, and the Ollama client.                            |
+| `ai`               | The risk rules, the decision, the strict check of an advice, and the Ollama client, which uses langchaingo.                            |
 | `api`              | The handlers, the middleware, the permission table and every error.                                            |
 | `web`              | The HTTP plumbing on fasthttp: the mux, the error envelope, the JSON decoding and the RFC 9421 fields.         |
 | `validate`         | The checks of the strings that a client sends.                                                                 |

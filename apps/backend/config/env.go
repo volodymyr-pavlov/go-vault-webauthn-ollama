@@ -393,12 +393,15 @@ func (env *Env) connect(ctx context.Context, opts Options) error {
 		timeout = ai.DefaultTimeout
 	}
 
-	env.Ollama = ai.New(ai.Options{
+	env.Ollama, err = ai.New(ai.Options{
 		URL:     opts.OllamaURL,
 		Model:   opts.OllamaModel,
 		Digest:  opts.OllamaDigest,
 		Timeout: timeout,
 	})
+	if err != nil {
+		return fmt.Errorf("build the model client: %w", err)
+	}
 
 	if err := env.Ollama.Check(ctx); err != nil {
 		return fmt.Errorf("check the model: %w", err)

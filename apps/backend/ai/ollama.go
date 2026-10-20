@@ -9,26 +9,26 @@
 // Ollama is a required part of the risk checks: the server does not start without it. [MockAdvisor] replaces the
 // model in tests only.
 //
-// [Client] asks the model through the HTTP API of Ollama. Ollama has no authentication of its own, so the client
-// treats it as an unauthenticated dependency. The client checks the digest of the model at startup and limits the size
+// [Client] asks the model through LangChain: a prompt template and a chain over the Ollama model of langchaingo. Ollama
+// has no authentication of its own, so the client treats it as an unauthenticated dependency. The client checks the digest of the model at startup and limits the size
 // of what it reads. It runs only a few requests at once, gives up after a timeout, and stops asking for a while after
 // repeated failures. It never logs a prompt or a raw response.
 package ai
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"sync/atomic"
-	"text/template"
 	"time"
 
 	"github.com/tidwall/gjson"
+	"github.com/tmc/langchaingo/chains"
+	"github.com/tmc/langchaingo/llms/ollama"
+	"github.com/tmc/langchaingo/prompts"
 	"github.com/valyala/bytebufferpool"
 	"github.com/volodymyr-pavlov/go-vault-webauthn-ollama/apps/backend/es"
 )
@@ -53,20 +53,20 @@ const (
 	MaxPredict = 160
 )
 
-// prompt is the fixed template of the request to the model. It has only typed and coarse values. It has no text that a
-// user typed.
-var prompt = template.Must(template.New("prompt").Parse(`You are a login risk analyst for a financial service.
-Rules already scored this login {{.Score}}/100, level {{.Level}}. Your analysis may only confirm the level or argue
+// promptTemplate is the fixed LangChain template of the request to the model. It has only typed and coarse values. It
+// has no text that a user typed.
+const promptTemplate = `You are a login risk analyst for a financial service.
+Rules already scored this login {{.score}}/100, level {{.level}}. Your analysis may only confirm the level or argue
 for a higher one; a lower level is ignored.
 
 Login facts (coarse, pseudonymous):
-- account pseudonym: {{.Pseudonym}}
-- country: {{.Country}}
-- hour of day (UTC bucket): {{.HourBucket}}
-- factor that passed: {{.Factor}}
-- signals that are set: {{.Signals.List}}
-- failed attempts in the last 10 minutes (5 means five or more): {{.Signals.FailedAttempts}}
-- wrong codes since the last good one (3 means three or more): {{.Signals.TOTPFailures}}
+- account pseudonym: {{.pseudonym}}
+- country: {{.country}}
+- hour of day (UTC bucket): {{.hour_bucket}}
+- factor that passed: {{.factor}}
+- signals that are set: {{.signals}}
+- failed attempts in the last 10 minutes (5 means five or more): {{.failed_attempts}}
+- wrong codes since the last good one (3 means three or more): {{.totp_failures}}
 
 The signals mean: new_device = the account logged in before, but not from this device; recent_enrollment = a factor
 was enrolled in the last day; unusual_hour = the hour is far from the hours of the earlier logins; impossible_travel =
@@ -75,40 +75,19 @@ hour.
 
 Answer with one JSON object and nothing else, with exactly these fields:
 {"risk_level": "low" | "medium" | "high", "reasons": [zero to five of "new_device", "recent_enrollment", "failed_attempts", "unusual_hour", "impossible_travel", "shared_address", "none"], "summary": "one sentence under 200 characters"}
-`))
+`
 
-// schema is the JSON schema that limits the answer of the model.
-var schema = json.RawMessage(`{
-  "type": "object",
-  "properties": {
-    "risk_level": {"type": "string", "enum": ["low", "medium", "high"]},
-    "reasons": {"type": "array", "maxItems": 5, "items": {"type": "string", "enum": ["new_device", "recent_enrollment", "failed_attempts", "unusual_hour", "impossible_travel", "shared_address", "none"]}},
-    "summary": {"type": "string", "maxLength": 200}
-  },
-  "required": ["risk_level", "reasons", "summary"],
-  "additionalProperties": false
-}`)
-
-// generateRequest is the body of a request to the generate endpoint of Ollama.
-type generateRequest struct {
-	Model   string          `json:"model"`
-	Prompt  string          `json:"prompt"`
-	Format  json.RawMessage `json:"format"`
-	Stream  bool            `json:"stream"`
-	Options generateOptions `json:"options"`
-}
-
-// generateOptions are the sampling options of a [generateRequest]. They make the answer repeatable and short.
-type generateOptions struct {
-	Temperature float64 `json:"temperature"`
-	Seed        int     `json:"seed"`
-	NumPredict  int     `json:"num_predict"`
-}
-
-// generateResponse is the part of the response of the generate endpoint that the client reads.
-type generateResponse struct {
-	Response string `json:"response"`
-	Done     bool   `json:"done"`
+// promptVariables are the variables of [promptTemplate].
+var promptVariables = []string{
+	"score",
+	"level",
+	"pseudonym",
+	"country",
+	"hour_bucket",
+	"factor",
+	"signals",
+	"failed_attempts",
+	"totp_failures",
 }
 
 // tagsResponse is the response of the tags endpoint of Ollama.
@@ -120,6 +99,33 @@ type tagsResponse struct {
 type tagModel struct {
 	Name   string `json:"name"`
 	Digest string `json:"digest"`
+}
+
+// limitedTransport reads at most [MaxResponseBytes] of a response body, so a hostile or broken server cannot make the
+// client read without end.
+type limitedTransport struct {
+	next http.RoundTripper
+}
+
+// RoundTrip implements [http.RoundTripper].
+func (t limitedTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	response, err := t.next.RoundTrip(request)
+	if err != nil {
+		return nil, err
+	}
+
+	response.Body = limitedBody{
+		Reader: io.LimitReader(response.Body, MaxResponseBytes),
+		Closer: response.Body,
+	}
+
+	return response, nil
+}
+
+// limitedBody is a response body that stops reading at a limit.
+type limitedBody struct {
+	io.Reader
+	io.Closer
 }
 
 // Options are the settings of a [Client]. A zero value of a limit means the default.
@@ -158,13 +164,14 @@ type Client struct {
 	breakFor   time.Duration
 	seed       int
 	http       *http.Client
+	chain      *chains.LLMChain
 	slots      chan struct{}
 	failures   atomic.Int32
 	openedAt   atomic.Int64
 }
 
-// New returns a [Client] that uses opts.
-func New(opts Options) *Client {
+// New returns a [Client] that uses opts. It returns an error if the URL of Ollama cannot be used.
+func New(opts Options) (*Client, error) {
 	c := &Client{
 		url:        strings.TrimSuffix(opts.URL, "/"),
 		model:      opts.Model,
@@ -200,7 +207,27 @@ func New(opts Options) *Client {
 		}
 	}
 
-	return c
+	transport := c.http.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+
+	limited := *c.http
+	limited.Transport = limitedTransport{next: transport}
+
+	model, err := ollama.New(
+		ollama.WithModel(c.model),
+		ollama.WithServerURL(c.url),
+		ollama.WithFormat("json"),
+		ollama.WithHTTPClient(&limited),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("build the model: %w", err)
+	}
+
+	c.chain = chains.NewLLMChain(model, prompts.NewPromptTemplate(promptTemplate, promptVariables))
+
+	return c, nil
 }
 
 // Check reads the tags of Ollama and returns nil if the model is there with the expected digest. The server calls it
@@ -279,69 +306,34 @@ func (c *Client) ReadOne(ctx context.Context, item Consultation, _ es.Op) (Consu
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
-	text := bytebufferpool.Get()
-	defer bytebufferpool.Put(text)
-
-	if err := prompt.Execute(text, item.Summary); err != nil {
-		return item, fmt.Errorf("render the prompt: %w", err)
+	summary := item.Summary
+	options := []chains.ChainCallOption{
+		chains.WithTemperature(0),
+		chains.WithMaxTokens(MaxPredict),
+	}
+	if c.seed != 0 {
+		options = append(options, chains.WithSeed(c.seed))
 	}
 
-	body := bytebufferpool.Get()
-	defer bytebufferpool.Put(body)
-
-	err := json.NewEncoder(body).Encode(generateRequest{
-		Model:  c.model,
-		Prompt: text.String(),
-		Format: schema,
-		Options: generateOptions{
-			Temperature: 0,
-			Seed:        c.seed,
-			NumPredict:  MaxPredict,
-		},
-	})
-	if err != nil {
-		return item, fmt.Errorf("encode the request: %w", err)
-	}
-
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url+"/api/generate", bytes.NewReader(body.B))
-	if err != nil {
-		return item, fmt.Errorf("build the request: %w", err)
-	}
-
-	request.Header.Set("Content-Type", "application/json")
-
-	response, err := c.http.Do(request)
+	answer, err := chains.Predict(ctx, c.chain, map[string]any{
+		"score":           summary.Score,
+		"level":           summary.Level,
+		"pseudonym":       summary.Pseudonym,
+		"country":         summary.Country,
+		"hour_bucket":     summary.HourBucket,
+		"factor":          summary.Factor,
+		"signals":         summary.Signals.List(),
+		"failed_attempts": summary.Signals.FailedAttempts(),
+		"totp_failures":   summary.Signals.TOTPFailures(),
+	}, options...)
 	if err != nil {
 		c.recordFailure(err)
 
 		return item, fmt.Errorf("ask the model: %w", err)
 	}
-	defer response.Body.Close()
-
-	if response.StatusCode != http.StatusOK {
-		c.recordFailure(ErrStatus)
-
-		return item, fmt.Errorf("ask the model: %w: status %d", ErrStatus, response.StatusCode)
-	}
-
-	buf := bytebufferpool.Get()
-	defer bytebufferpool.Put(buf)
-
-	_, err = buf.ReadFrom(io.LimitReader(response.Body, MaxResponseBytes))
-
-	generated := buf.B
-	if err == nil && !gjson.ValidBytes(generated) {
-		err = ErrInvalidJSON
-	}
-
-	if err != nil {
-		c.recordFailure(err)
-
-		return item, fmt.Errorf("decode the response: %w", err)
-	}
 
 	c.failures.Store(0)
-	advice, err := ParseAdvice([]byte(gjson.GetBytes(generated, "response").String()))
+	advice, err := ParseAdvice([]byte(answer))
 	item.Advice = advice
 	return item, err
 }

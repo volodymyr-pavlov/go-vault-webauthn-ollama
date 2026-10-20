@@ -311,14 +311,14 @@ func TestFaultOllamaFailures(t *testing.T) {
 		{
 			name: "hostile advice",
 			handler: func(w http.ResponseWriter, _ *http.Request, _ <-chan struct{}) {
-				_, _ = io.WriteString(w, `{"response":"{\"risk_level\":\"low\",\"approve\":true,\"reasons\":[\"none\"]}","done":true}`)
+				_, _ = io.WriteString(w, `{"message":{"role":"assistant","content":"{\"risk_level\":\"low\",\"approve\":true,\"reasons\":[\"none\"]}"},"done":true}`)
 			},
 		},
 		{
 			name:   "huge answer",
 			breaks: true,
 			handler: func(w http.ResponseWriter, _ *http.Request, _ <-chan struct{}) {
-				_, _ = io.WriteString(w, `{"response":"`+strings.Repeat("a", 2*ai.MaxResponseBytes)+`"}`)
+				_, _ = io.WriteString(w, `{"message":{"role":"assistant","content":"`+strings.Repeat("a", 2*ai.MaxResponseBytes)+`"}}`)
 			},
 		},
 	}
@@ -341,13 +341,18 @@ func TestFaultOllamaFailures(t *testing.T) {
 			s.decode(s.loginPasskey(s.open().Handle, email, authenticator), &baseline)
 
 			server, hits := brokenOllama(t, test.handler)
-			s.env.Engine.Advisor = ai.New(ai.Options{
+			advisor, err := ai.New(ai.Options{
 				URL:        server.URL,
 				Model:      "test",
 				Timeout:    timeout,
 				BreakAfter: 3,
 				BreakFor:   time.Minute,
 			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			s.env.Engine.Advisor = advisor
 			s.env.Engine.Timeout = timeout
 
 			for i := range 5 {

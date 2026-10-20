@@ -130,13 +130,19 @@ func run(args []string) error {
 	ctx := context.Background()
 	var advisor *ai.Client
 	if *ollamaURL != "" {
-		advisor = ai.New(ai.Options{
+		var err error
+
+		advisor, err = ai.New(ai.Options{
 			URL:         *ollamaURL,
 			Model:       *model,
 			Digest:      *digest,
 			Timeout:     *timeout,
 			Concurrency: 1,
 		})
+		if err != nil {
+			return err
+		}
+
 		if *digest != "" {
 			if err := advisor.Check(ctx); err != nil {
 				return err
