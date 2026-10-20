@@ -1,0 +1,236 @@
+# The stand: Vault in dev mode (LOCAL ONLY), MySQL, Redis, Mailpit, Ollama, the backend and the page.
+#
+#   make stand-up      builds and starts the stand. The page is on http://localhost:3000, the API on http://localhost:8080.
+#   make stand-logs    follows the backend: one line for each request.
+#   make stand-mail    opens Mailpit, the mail catcher, where the verification tokens and the notices land.
+#   make stand-down    stops the stand.
+#   make stand-reset   stops the stand and wipes MySQL, which is needed after Vault restarted: dev mode keeps the keys
+#                      in memory, so every stored ciphertext is lost with them.
+#
+# The base images come only from scripts/versions.env, which has no copy here. The Makefile passes that file, and the
+# project .env after it when there is one, because compose skips .env once an --env-file is given.
+#
+# The initialization job, vault-init, enables Transit, makes the two keys, the policy and the AppRole, and leaves the
+# role ID and a wrapping token in the volume vault-handoff. The backend unwraps the token at startup, which uses it up.
+# Nothing secret is in this file: the dev root token and the MySQL password are in .env, which make stand-secrets
+# writes and git ignores.
+#
+# The model, OLLAMA_MODEL, and its digest, OLLAMA_DIGEST, are pinned in scripts/versions.env. The ollama-pull job pulls
+# the model once, and the backend does not start unless Ollama has it with that digest.
+#
+# Settings come from the environment or from .env. The ones with a default are optional.
+#   VAULT_DEV_ROOT_TOKEN_ID  the root token of the dev-mode Vault (written by make stand-secrets)
+#   MYSQL_PASSWORD           the password of the backend's MySQL user (written by make stand-secrets)
+#   TRUSTED_PROXIES          the address prefixes that may set X-Forwarded-For (default 172.16.0.0/12, the networks of Docker,
+#                            so the backend sees the address of the browser that the page passes on)
+#   ORIGINS                  the origins allowed (default http://localhost:3000,http://localhost:8080)
+#   LOG_LEVEL                debug, info, warn or error (default info)
+
+services:
+  vault:
+    image: ${VAULT_IMAGE}
+    # LOCAL ONLY: dev mode keeps everything in memory, serves plain HTTP and starts unsealed with a root token.
+    command: ['server', '-dev', '-dev-listen-address=0.0.0.0:8200']
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID}
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - '127.0.0.1:8200:8200/tcp'
+    healthcheck:
+      test: ['CMD', 'vault', 'status', '-address=http://127.0.0.1:8200']
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  vault-init:
+    image: ${VAULT_IMAGE}
+    entrypoint: ['sh', '/init/vault-init.sh']
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${VAULT_DEV_ROOT_TOKEN_ID}
+    volumes:
+      - ./scripts/vault-init.sh:/init/vault-init.sh:ro
+      - ./scripts/vault-policy.hcl:/init/vault-policy.hcl:ro
+      - vault-handoff:/handoff
+    depends_on:
+      vault:
+        condition: service_healthy
+
+  mysql:
+    image: ${MYSQL_IMAGE}
+    environment:
+      MYSQL_RANDOM_ROOT_PASSWORD: 'yes'
+      MYSQL_DATABASE: login
+      MYSQL_USER: login
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-u', 'login', '-p${MYSQL_PASSWORD}']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: ${REDIS_IMAGE}
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  # Mailpit catches every message the backend sends. Its web interface is on http://127.0.0.1:8025.
+  mailpit:
+    image: ${MAILPIT_IMAGE}
+    ports:
+      - '127.0.0.1:8025:8025/tcp'
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz']
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  backend:
+    image: go-vault-webauthn-ollama-backend:latest
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+      args:
+        GO_ALPINE_IMAGE: ${GO_ALPINE_IMAGE}
+        ALPINE_IMAGE: ${ALPINE_IMAGE}
+    command:
+      - -http=:8080
+      # The metrics listener is not published to the host and the page does not proxy it. Scrape it inside the compose
+      # network: `docker compose exec backend wget -qO- http://127.0.0.1:9090/metrics` (the image has the BusyBox wget).
+      - -metrics=:9090
+      - -mysql=login:${MYSQL_PASSWORD}@tcp(mysql:3306)/login
+      - -redis=redis:6379
+      - -smtp=mailpit:1025
+      - -mail-from=login@example.com
+      - -vault=http://vault:8200
+      - -vault-role-id-file=/handoff/role_id
+      - -vault-wrapped-token-file=/handoff/wrapped_token
+      - -rp-id=localhost
+      - -rp-name=Vault Login
+      - -origins=${ORIGINS:-http://localhost:3000,http://localhost:8080}
+      - -trusted-proxies=${TRUSTED_PROXIES:-172.16.0.0/12}
+      - -ollama=http://ollama:11434
+      - -ollama-model=${OLLAMA_MODEL}
+      - -ollama-digest=${OLLAMA_DIGEST}
+      - -log-level=${LOG_LEVEL:-info}
+    volumes:
+      - vault-handoff:/handoff:ro
+    ports:
+      - '127.0.0.1:8080:8080/tcp'
+    depends_on:
+      vault-init:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+      ollama-pull:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', '--header=User-Agent: healthcheck', 'http://127.0.0.1:8080/healthz']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  # The page on nginx. It serves the single-page app and passes /v1/ to the backend, so the page and the API share one
+  # origin and a passkey is bound to it.
+  frontend:
+    image: go-vault-webauthn-ollama-frontend:latest
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+      args:
+        NODE_ALPINE_IMAGE: ${NODE_ALPINE_IMAGE}
+        NGINX_IMAGE: ${NGINX_IMAGE}
+        VITE_MAIL_URL: http://127.0.0.1:8025
+    ports:
+      - '127.0.0.1:3000:8080/tcp'
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # One run of the operator command that lists and approves recovery requests:
+  #   make recovery-list
+  #   make recovery-approve XID=n
+  recovery:
+    image: go-vault-webauthn-ollama-backend:latest
+    profiles: ['ops']
+    # A short command, not a server: the health check of the image does not apply.
+    healthcheck:
+      disable: true
+    environment:
+      MYSQL_DSN: login:${MYSQL_PASSWORD}@tcp(mysql:3306)/login
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  # One run of the backend that rewraps every stored TOTP secret with the latest key version and exits:
+  #   make rewrap-totp
+  rewrap:
+    image: go-vault-webauthn-ollama-backend:latest
+    profiles: ['ops']
+    command:
+      - -http=:8080
+      - -mysql=login:${MYSQL_PASSWORD}@tcp(mysql:3306)/login
+      - -redis=redis:6379
+      - -smtp=mailpit:1025
+      - -mail-from=login@example.com
+      - -vault=http://vault:8200
+      - -vault-role-id-file=/handoff/role_id
+      - -vault-wrapped-token-file=/handoff/wrapped_token
+      - -rp-id=localhost
+      - -rp-name=Vault Login
+      - -origins=${ORIGINS:-http://localhost:3000,http://localhost:8080}
+      - -trusted-proxies=${TRUSTED_PROXIES:-172.16.0.0/12}
+      - -ollama=http://ollama:11434
+      - -ollama-model=${OLLAMA_MODEL}
+      - -ollama-digest=${OLLAMA_DIGEST}
+      - -log-level=${LOG_LEVEL:-info}
+      - -rewrap
+    volumes:
+      - vault-handoff:/handoff:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # Ollama has no authentication: it is on the internal network only, with no published port.
+  ollama:
+    image: ${OLLAMA_IMAGE}
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - default
+      - internal
+    healthcheck:
+      test: ['CMD', 'ollama', 'list']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # One run that pulls the model into the volume of Ollama and exits.
+  ollama-pull:
+    image: ${OLLAMA_IMAGE}
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ['ollama', 'pull', '${OLLAMA_MODEL}']
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+networks:
+  internal:
+    internal: true
+
+volumes:
+  vault-handoff:
+  mysql-data:
+  ollama-models:
