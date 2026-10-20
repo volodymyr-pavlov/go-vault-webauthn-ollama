@@ -73,6 +73,9 @@ was enrolled in the last day; unusual_hour = the hour is far from the hours of t
 the move from the last login place is too fast; shared_address = five or more users tried this address in the last
 hour; anonymizing_network = the address belongs to a VPN, proxy or hosting provider.
 
+The reasons may only be words from the list below. The factor, the country and the hour are facts, not reasons: never
+write them as a reason. If no signal and no count is a cause for concern, the only reason is "none".
+
 Answer with one JSON object and nothing else, with exactly these fields:
 {"risk_level": "low" | "medium" | "high", "reasons": [zero to five of "new_device", "recent_enrollment", "failed_attempts", "unusual_hour", "impossible_travel", "shared_address", "anonymizing_network", "none"], "summary": "one sentence under 200 characters"}
 `

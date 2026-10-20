@@ -7,9 +7,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -97,6 +99,7 @@ func run(args []string) error {
 	seed := set.Uint64("seed", 2026, "the seed of the dataset")
 	timeout := set.Duration("timeout", 30*time.Second, "how long one advice may take")
 	out := set.String("out", "out/evaluation.md", "the report; the dataset goes next to it as dataset.csv")
+	resume := set.Bool("resume", false, "continue a run that was cut: read the answers that the progress file next to the report already holds, and ask the model only for the others")
 	set.SetOutput(io.Discard)
 
 	if err := set.Parse(args); err != nil {
@@ -159,6 +162,22 @@ func run(args []string) error {
 	refused := 0
 	failed := 0
 	failures := make(map[string]int)
+	refusals := make(map[string]int)
+
+	// A run takes tens of minutes, and a cut run must not start again from the first login. Each answer of the model goes
+	// to a progress file at once, and -resume reads it back.
+	progressPath := *out + ".progress"
+
+	done, err := loadProgress(progressPath, *resume)
+	if err != nil {
+		return err
+	}
+
+	progress, err := os.OpenFile(filepath.Clean(progressPath), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+
 	for _, event := range events {
 		score := event.Signals.Score()
 		level := ai.LevelOf(score)
@@ -168,29 +187,39 @@ func run(args []string) error {
 
 		flagged := flaggedByRules
 		if advisor != nil {
-			pseudonym := sha256.Sum256([]byte(strconv.Itoa(event.ID)))
-			started := time.Now()
-			consultation, err := advisor.ReadOne(ctx, ai.Consultation{
-				Summary: ai.Summary{
-					Pseudonym:  hex.EncodeToString(pseudonym[:8]),
-					Country:    event.Country,
-					HourBucket: event.HourBucket,
-					Factor:     event.Factor,
-					Signals:    event.Signals,
-					Score:      score,
-					Level:      level.String(),
-				},
-			}, 0)
-			advice := consultation.Advice
-			latencies = append(latencies, time.Since(started))
+			given, saved := done[event.ID]
+			if !saved {
+				pseudonym := sha256.Sum256([]byte(strconv.Itoa(event.ID)))
+				started := time.Now()
+				consultation, err := advisor.ReadOne(ctx, ai.Consultation{
+					Summary: ai.Summary{
+						Pseudonym:  hex.EncodeToString(pseudonym[:8]),
+						Country:    event.Country,
+						HourBucket: event.HourBucket,
+						Factor:     event.Factor,
+						Signals:    event.Signals,
+						Score:      score,
+						Level:      level.String(),
+					},
+				}, 0)
 
-			switch {
-			case ai.IsRefusedAdvice(err):
+				given = answerOf(consultation.Advice.Level > level, err, time.Since(started))
+
+				if err := saveAnswer(progress, event.ID, given); err != nil {
+					return errors.Join(err, progress.Close())
+				}
+			}
+
+			latencies = append(latencies, given.Latency)
+
+			switch given.Kind {
+			case answerRefused:
 				refused++
-			case err != nil:
+				refusals[given.Cause]++
+			case answerFailed:
 				failed++
-				failures[err.Error()]++
-			case advice.Level > level:
+				failures[given.Cause]++
+			case answerRaised:
 				current.raised++
 				flagged = true
 
@@ -204,7 +233,15 @@ func run(args []string) error {
 		fmt.Fprintf(os.Stderr, "\r%d/%d", event.ID, len(events))
 	}
 
+	if err := progress.Close(); err != nil {
+		return err
+	}
+
 	fmt.Fprintln(os.Stderr)
+
+	for cause, times := range refusals {
+		fmt.Fprintf(os.Stderr, "evaluate: %d responses were refused: %s\n", times, cause)
+	}
 
 	for cause, times := range failures {
 		fmt.Fprintf(os.Stderr, "evaluate: %d requests failed: %s\n", times, cause)
@@ -338,4 +375,100 @@ func writeReport(w io.Writer, in reportInput) {
 	fmt.Fprintf(w, "Hardware: %s/%s, %d CPUs, the machine that ran this command.\n\n", runtime.GOOS, runtime.GOARCH, runtime.NumCPU())
 	fmt.Fprintf(w, "| Latency of the model step | |\n| --- | --- |\n| p50 | %s |\n| p95 | %s |\n\n", p50.Round(time.Millisecond), p95.Round(time.Millisecond))
 	fmt.Fprintf(w, "The model raised %d of %d logins, and %d of those were suspicious. %d responses were refused by the strict check and %d requests failed; both count as no advice.\n", raised, in.events, raisedRight, in.refused, in.failed)
+}
+
+// The kinds of answer that the model can give to one login.
+const (
+	// answerAdvised means that the model gave advice that did not raise the level.
+	answerAdvised = "advised"
+
+	// answerRaised means that the advice was a higher level than the rules gave.
+	answerRaised = "raised"
+
+	// answerRefused means that the strict check refused the response.
+	answerRefused = "refused"
+
+	// answerFailed means that the request failed or timed out.
+	answerFailed = "failed"
+)
+
+// answer is what the model gave for one login, in the form that the progress file keeps.
+type answer struct {
+	ID      int           `json:"id"`
+	Kind    string        `json:"kind"`
+	Cause   string        `json:"cause,omitempty"`
+	Latency time.Duration `json:"latency_ns"`
+}
+
+// answerOf sorts the outcome of one request into an [answer]. raised says that the advice was stricter than the rules.
+func answerOf(raised bool, err error, latency time.Duration) answer {
+	switch {
+	case ai.IsRefusedAdvice(err):
+		return answer{
+			Kind:    answerRefused,
+			Cause:   err.Error(),
+			Latency: latency,
+		}
+	case err != nil:
+		return answer{
+			Kind:    answerFailed,
+			Cause:   err.Error(),
+			Latency: latency,
+		}
+	case raised:
+		return answer{
+			Kind:    answerRaised,
+			Latency: latency,
+		}
+	}
+
+	return answer{
+		Kind:    answerAdvised,
+		Latency: latency,
+	}
+}
+
+// saveAnswer appends the answer of the login with the given id to the progress file and writes it to the disk.
+func saveAnswer(file *os.File, id int, given answer) error {
+	given.ID = id
+
+	line, err := json.Marshal(given)
+	if err != nil {
+		return err
+	}
+
+	if _, err := file.Write(append(line, '\n')); err != nil {
+		return err
+	}
+
+	return file.Sync()
+}
+
+// loadProgress reads the answers of an earlier run from the progress file at path, by login id. If resume is false, it
+// empties the file and returns no answers. A missing file is an empty run, and so is a last line that a cut left
+// half written.
+func loadProgress(path string, resume bool) (map[int]answer, error) {
+	done := make(map[int]answer)
+
+	if !resume {
+		return done, os.WriteFile(path, nil, 0o600)
+	}
+
+	raw, err := os.ReadFile(filepath.Clean(path))
+	if errors.Is(err, os.ErrNotExist) {
+		return done, nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	for line := range bytes.SplitSeq(raw, []byte{'\n'}) {
+		var read answer
+		if json.Unmarshal(line, &read) != nil || read.ID == 0 {
+			continue
+		}
+
+		done[read.ID] = read
+	}
+
+	return done, nil
 }

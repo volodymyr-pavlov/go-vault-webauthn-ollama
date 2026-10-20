@@ -22,7 +22,8 @@ from the sessions of the address. Credential stuffing sets this signal, and so d
 score is capped at 100.
 
 The anonymizing network signal needs a list that the operator provides, with `-anonymizing-ranges`: a text file with
-one address prefix on each line. The service reads it at start-up and checks the address of each login against it in
+one address prefix on each line. The service reads it at start-up and again within a minute of a change of the file, so the operator
+needs no restart, and a broken file keeps the earlier list. It checks the address of each login against the list in
 memory, so no address leaves the machine. Without the file the signal is never set. The stand ships a sample with the
 documentation ranges only, so it flags no real traffic. Many honest people use a VPN, so the signal has a low weight. It
 matters together with a new device or an impossible travel. The model sees only the name of the signal, never the
@@ -78,6 +79,11 @@ linux/arm64 machine with 14 CPUs and nothing else running. The data had 620 logi
 hard scenario. Of the requests, 4 failed or timed out, and they count as no advice. The model raised none of the 620
 logins, so the recall and the false positive rate are the same with and without it. The model step took 2.18 seconds at
 the median and 3.35 seconds at the 95th percentile.
+
+The VPN signal and the one sentence that tells the model that the factor of the login is not a reason were added after this
+run, and the run was not repeated, because a full run takes about 40 minutes of all the CPUs and the model raises nothing
+in any case. A short sample of 130 logins after the change had 3 answers that the strict check refused, and the model
+raised none. The dataset has no VPN scenario, so the figures do not show the effect of the VPN signal.
 
 An earlier run on a busy machine failed 514 of 620 requests, because the circuit breaker opened. The team discarded its
 figures. A model run needs a quiet machine.

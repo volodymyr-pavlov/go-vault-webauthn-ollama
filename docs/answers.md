@@ -62,8 +62,8 @@ counts. It gets nothing that a user typed and nothing personal. A local model ke
 costs nothing for each call and has no account that can leak.
 
 Each call has a timeout, and at most two calls run at the same time. After three failures, a breaker stops the calls for
-thirty seconds. The service treats a late or bad answer as no advice. The temperature is zero and the seed is fixed, so
-the same summary gives the same answer. A strict check refuses any answer outside the closed set of levels and reasons.
+thirty seconds. The service treats a late or bad answer as no advice. The temperature is zero, so the same summary
+usually gives the same answer. A strict check refuses any answer outside the closed set of levels and reasons.
 
 ## A recovery flow for a user who lost everything
 

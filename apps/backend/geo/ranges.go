@@ -3,12 +3,16 @@ package geo
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 )
 
 // MaxRangesFileSize is the largest file of address ranges that [ReadRanges] reads, in bytes. A list of the ranges of
@@ -76,7 +80,17 @@ func ReadRanges(path string) (*Ranges, error) {
 			prefix = netip.PrefixFrom(address.Unmap(), address.Unmap().BitLen())
 		}
 
-		prefix = netip.PrefixFrom(prefix.Addr().Unmap(), prefix.Bits()).Masked()
+		// An IPv4 prefix in IPv6 form, such as ::ffff:198.51.100.0/120, counts as an IPv4 prefix: the first 96 bits only say
+		// that the address is mapped. A shorter mapped prefix covers more than the mapped range and stays an IPv6 prefix.
+		if prefix.Addr().Is4In6() && prefix.Bits() >= 96 {
+			prefix = netip.PrefixFrom(prefix.Addr().Unmap(), prefix.Bits()-96)
+		}
+
+		prefix = prefix.Masked()
+		if !prefix.IsValid() {
+			return nil, fmt.Errorf("line %d: %w", line, ErrRanges)
+		}
+
 		sets := ranges.v6
 		if prefix.Addr().Is4() {
 			sets = ranges.v4
@@ -146,4 +160,114 @@ func (r *Ranges) Contains(address netip.Addr) bool {
 	}
 
 	return false
+}
+
+// RangesRefreshInterval is how often [RangesFile.Run] looks at the file for a change.
+const RangesRefreshInterval = time.Minute
+
+// RangesFile is a set of address prefixes that follows a file. The service reads the file at start-up, and [RangesFile.Run]
+// reads it again when its size or its time of change differs, so an operator can update the list without a restart. A
+// reload that fails keeps the list that works. The zero value and a nil pointer are empty sets, and every method is safe
+// to call from several goroutines.
+type RangesFile struct {
+	path    string
+	current atomic.Pointer[Ranges]
+
+	// mu serializes the reloads, and modified and size say which version of the file current holds.
+	mu       sync.Mutex
+	modified time.Time
+	size     int64
+}
+
+// WatchRanges reads the file at path and returns the set that follows it.
+//
+// It returns the errors of [ReadRanges].
+func WatchRanges(path string) (*RangesFile, error) {
+	file := &RangesFile{
+		path: filepath.Clean(path),
+	}
+
+	if _, err := file.Reload(); err != nil {
+		return nil, err
+	}
+
+	return file, nil
+}
+
+// Contains reports whether the address is inside one of the prefixes of the list that is loaded now.
+func (f *RangesFile) Contains(address netip.Addr) bool {
+	if f == nil {
+		return false
+	}
+
+	return f.current.Load().Contains(address)
+}
+
+// Len returns the number of prefixes in the list that is loaded now.
+func (f *RangesFile) Len() int {
+	if f == nil {
+		return 0
+	}
+
+	return f.current.Load().Len()
+}
+
+// Reload reads the file again if its size or its time of change differs from the version that is loaded, and then
+// replaces the list as a whole, so a lookup sees the old list or the new one and never a mix. It reports whether it
+// loaded a new list.
+//
+// It returns the errors of [ReadRanges], and then it keeps the list that is loaded. A later call tries again.
+func (f *RangesFile) Reload() (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	info, err := os.Stat(f.path)
+	if err != nil {
+		return false, fmt.Errorf("read the ranges file: %w", err)
+	}
+
+	if f.current.Load() != nil && info.ModTime().Equal(f.modified) && info.Size() == f.size {
+		return false, nil
+	}
+
+	ranges, err := ReadRanges(f.path)
+	if err != nil {
+		return false, err
+	}
+
+	f.current.Store(ranges)
+	f.modified = info.ModTime()
+	f.size = info.Size()
+
+	return true, nil
+}
+
+// Run looks at the file every interval and reloads it when it changed, until ctx ends. A failed reload goes to onFailure
+// and the list that works stays. A successful reload goes to onReload with the number of prefixes.
+func (f *RangesFile) Run(ctx context.Context, interval time.Duration, onReload func(prefixes int), onFailure func(error)) {
+	if f == nil {
+		return
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		changed, err := f.Reload()
+		if err != nil {
+			onFailure(err)
+
+			continue
+		}
+
+		if changed {
+			onReload(f.Len())
+		}
+	}
 }

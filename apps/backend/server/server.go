@@ -17,6 +17,7 @@ import (
 	"github.com/volodymyr-pavlov/go-vault-webauthn-ollama/apps/backend/api"
 	"github.com/volodymyr-pavlov/go-vault-webauthn-ollama/apps/backend/config"
 	"github.com/volodymyr-pavlov/go-vault-webauthn-ollama/apps/backend/es"
+	"github.com/volodymyr-pavlov/go-vault-webauthn-ollama/apps/backend/geo"
 	"github.com/volodymyr-pavlov/go-vault-webauthn-ollama/apps/backend/metrics"
 	"github.com/volodymyr-pavlov/go-vault-webauthn-ollama/apps/backend/totp"
 	"github.com/volodymyr-pavlov/go-vault-webauthn-ollama/apps/backend/web"
@@ -501,6 +502,11 @@ func (s *Server) Startup(ctx context.Context) error {
 	}
 
 	go s.purgeSessions(ctx)
+	go s.env.AnonymizingRanges.Run(ctx, geo.RangesRefreshInterval, func(prefixes int) {
+		s.logger.Info("reloaded the anonymizing ranges", slog.Int("prefixes", prefixes))
+	}, func(err error) {
+		s.logger.Error("reload the anonymizing ranges; the earlier list stays", slog.String("error", err.Error()))
+	})
 	go s.purgeRequestLog(ctx)
 
 	select {

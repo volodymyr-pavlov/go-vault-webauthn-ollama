@@ -115,7 +115,7 @@ type Env struct {
 
 	// AnonymizingRanges is the list of the address ranges of VPN, proxy and hosting providers. It is nil when the option is
 	// empty.
-	AnonymizingRanges *geo.Ranges
+	AnonymizingRanges *geo.RangesFile
 	MessageWriter     es.Writer[es.Message]
 	RateLimiter       *redis_rate.Limiter
 	Engine            *ai.Engine
@@ -383,7 +383,7 @@ func (env *Env) connect(ctx context.Context, opts Options) error {
 	}
 
 	if opts.AnonymizingRanges != "" {
-		env.AnonymizingRanges, err = geo.ReadRanges(opts.AnonymizingRanges)
+		env.AnonymizingRanges, err = geo.WatchRanges(opts.AnonymizingRanges)
 		if err != nil {
 			return errors.Join(fmt.Errorf("read the anonymizing ranges: %w", err), db.Close())
 		}

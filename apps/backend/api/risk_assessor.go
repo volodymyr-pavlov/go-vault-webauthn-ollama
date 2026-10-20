@@ -50,9 +50,9 @@ type RiskAssessor struct {
 	// Engine decides on the signals.
 	Engine *ai.Engine
 
-	// Anonymizing is the list of the address ranges of VPN, proxy and hosting providers. A nil list is empty, so the
-	// signal is never set.
-	Anonymizing *geo.Ranges
+	// Anonymizing is the list of the address ranges of VPN, proxy and hosting providers. It follows its file, so a
+	// change of the file takes effect without a restart. A nil list is empty, so the signal is never set.
+	Anonymizing *geo.RangesFile
 }
 
 // ReadOne implements [es.Reader]. It returns the attempt with Outcome set. The [Op] is not used.

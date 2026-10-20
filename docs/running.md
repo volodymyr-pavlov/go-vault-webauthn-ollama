@@ -155,7 +155,7 @@ ones that change.
 | `-session-idle`         | The idle timeout of a session. The default is 168h. A session also ends after 30 days.    |
 | `-session-retention`    | How long an expired session stays before an hourly job deletes it. The default is 90 days. |
 | `-request-log-retention` | How long the rows of the request log stay before an hourly job deletes them. The default is 30 days. |
-| `-anonymizing-ranges`   | A text file with the address ranges of VPN, proxy and hosting providers, one prefix on each line. A login from one sets a risk signal. The default is none. |
+| `-anonymizing-ranges`   | A text file with the address ranges of VPN, proxy and hosting providers, one prefix on each line. A login from one sets a risk signal. The service reloads the file within a minute of a change. The default is none. |
 | `-recovery-delay`       | The delay of a recovery request. The default is 72h.                                      |
 | `-metrics`              | The address of the metrics listener, such as `:9090`. The default is off.                 |
 | `-smtp-starttls`        | Upgrades the mail connection with STARTTLS. Off by default.                               |
