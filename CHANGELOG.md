@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.0](https://github.com/volodymyr-pavlov/go-vault-webauthn-ollama/compare/v1.3.0...v1.4.0) (2026-10-20)
+
+### Features
+
+* **ai:** improve evaluation, range management, and prompt instructions ([d440790](https://github.com/volodymyr-pavlov/go-vault-webauthn-ollama/commit/d44079067423ae237165d5fb742ce669ef480376))
+
 ## [1.3.0](https://github.com/volodymyr-pavlov/go-vault-webauthn-ollama/compare/v1.2.0...v1.3.0) (2026-10-20)
 
 ### Features
