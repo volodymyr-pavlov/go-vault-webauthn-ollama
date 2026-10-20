@@ -1,0 +1,6 @@
+*
+!apps/backend/
+apps/backend/tools
+apps/backend/Dockerfile*
+**/*_test.go
+**/testdata
