@@ -1,0 +1,15 @@
+package fixed
+
+import "strconv"
+
+func operations(a, b string) (int, error) {
+	x, err := strconv.Atoi(a)
+	if err != nil {
+		return 0, err
+	}
+	y, err := strconv.Atoi(b) // want `separated by an empty line`
+	if err != nil {
+		return 0, err
+	}
+	return x + y, nil // want `separated by an empty line`
+}
