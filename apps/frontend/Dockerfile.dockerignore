@@ -1,0 +1,7 @@
+*
+!apps/frontend/
+apps/frontend/node_modules
+apps/frontend/.dist
+apps/frontend/.reports
+apps/frontend/Dockerfile*
+apps/frontend/README.md
