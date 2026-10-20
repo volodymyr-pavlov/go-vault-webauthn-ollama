@@ -19,7 +19,7 @@ var ErrBreakerOpen = errors.New("ai: the breaker is open")
 var ErrBusy = errors.New("ai: every slot is taken")
 
 // ErrAdvice means that the response of the model breaks the rules of [ParseAdvice]. For example, it has a field that is
-// not in the schema, a value outside its set or a summary that is too long. [ParseAdvice] wraps it with the cause. The
+// not in the expected shape, a value outside its set or a summary that is too long. [ParseAdvice] wraps it with the cause. The
 // [Engine] treats a refused response as no advice.
 var ErrAdvice = errors.New("ai: the advice is refused")
 

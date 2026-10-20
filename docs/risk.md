@@ -41,7 +41,8 @@ The model is `llama3.2:3b`, and the service runs it through Ollama. The service 
 a keyed pseudonym, a country, a four-hour bucket of the day, the factor, the names of the signals and two counts. The
 prompt holds nothing that a user typed, so there is nothing to inject into it.
 
-The service asks for JSON mode through LangChain (langchaingo): a prompt template, an LLM chain and the Ollama model. Ollama does not enforce a schema in that mode, so the service checks the response strictly. The levels and the
+The service asks for JSON mode through LangChain (langchaingo): a prompt template, an LLM chain and the Ollama
+model. Ollama does not enforce a schema in that mode, so the service checks the response strictly. The levels and the
 reasons are closed sets, the summary has at most 200 bytes, and the service accepts no unknown field.
 
 Ollama has no authentication of its own, and it has no published port. The service does not start without Ollama. At
