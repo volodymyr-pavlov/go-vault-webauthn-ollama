@@ -14,3 +14,9 @@ var ErrReused = errors.New("the code was already used")
 // ErrOptions is returned by [Options.Validate] and [Options.Verify] when the number of digits is negative or above
 // [MaxDigits].
 var ErrOptions = errors.New("the number of digits is out of range")
+
+// ErrImport is returned by [ParseURI] and [ParseSecret] when a link or a secret cannot be imported. The text says why.
+var ErrImport = errors.New("totp: the account cannot be imported")
+
+// errTruncated is the cause inside [ErrImport] when the migration data ends in the middle of a field.
+var errTruncated = errors.New("truncated")
