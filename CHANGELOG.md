@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.0](https://github.com/volodymyr-pavlov/go-vault-webauthn-ollama/compare/v1.0.0...v1.1.0) (2026-10-20)
+
+### Features
+
+* **ai:** ask the model through langchaingo ([45e56cd](https://github.com/volodymyr-pavlov/go-vault-webauthn-ollama/commit/45e56cd49b82051f5f330884ee70f6b682f67f54))
+
 ## 1.0.0 (2026-10-20)
 
 ### Features
