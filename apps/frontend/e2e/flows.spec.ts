@@ -43,14 +43,15 @@ test('a user without a passkey logs in with a password and a code', async ({ pag
   await expect(page.getByText('You are logged in')).toBeVisible();
 });
 
-test('the authenticator app stays on the account, and a second one is refused', async ({ page }) => {
+test('the authenticator app stays on the user, and a second one is refused', async ({ page }) => {
   const email = uniqueEmail();
   const secret = await registerWithTotp(page, email, password);
   await submitPassword(page, email, password);
   await submitCode(page, totpCode(secret, 1));
   await expect(page.getByText('You are logged in')).toBeVisible();
 
-  // The app is the only factor of the account, because a passkey and an app never share an account.
+  // The app is the only factor of the user, because a passkey and an app never share a user.
+  await page.getByRole('tab', { name: 'Security' }).click();
   await page.getByRole('button', { name: 'Remove the authenticator app' }).click();
   await expect(page.getByRole('alert')).toHaveText('The last factor cannot be removed. Add another one first.');
 
@@ -72,9 +73,9 @@ test('the owner cancels a delayed recovery with the token from the email', async
   await expect(page.getByRole('button', { name: 'Log in with a passkey' })).toBeVisible();
 
   await page.getByRole('button', { name: 'Recover' }).click();
-  await page.getByLabel('Email of the account').fill(email);
+  await page.getByLabel('Your email').fill(email);
   await page.getByRole('button', { name: 'Ask for a recovery' }).click();
-  await expect(page.getByText('If the account exists, we sent an email.')).toBeVisible();
+  await expect(page.getByText('If the address is registered, we sent an email.')).toBeVisible();
 
   await page.getByLabel('Cancel token').fill(await newestToken(email, [verification]));
   await page.getByRole('button', { name: 'Cancel the recovery' }).click();

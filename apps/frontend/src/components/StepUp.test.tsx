@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
-/** Tests for the fresh login prompt and the way the Account screen shows it. */
+/** Tests for the fresh login prompt and the way the User screen shows it. */
 import type { Decision } from '@/api/types';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
 import { StepUp } from '@/components/StepUp';
 import { Flag } from '@/lib/flags';
-import { Account } from '@/screens/Account';
+import { User } from '@/screens/User';
 import { useAuth } from '@/store/auth';
 
 const mocks = vi.hoisted(() => ({
@@ -48,6 +48,7 @@ vi.mock('@/lib/webauthn', () => ({
 vi.mock('@/components/RecoveryCodes', () => ({ RecoveryCodes: () => null }));
 vi.mock('@/components/TotpSetup', () => ({ TotpSetup: () => null }));
 vi.mock('@/components/PasskeyAdd', () => ({ PasskeyAdd: () => null }));
+vi.mock('@/components/Authenticator', () => ({ Authenticator: () => null }));
 
 const stale = new ApiError({
   status: 403,
@@ -125,10 +126,11 @@ describe('StepUp', () => {
   });
 });
 
-describe('Account', () => {
+describe('User', () => {
   it('shows the prompt after the API asks for a fresh login', async () => {
     mocks.removePasskey.mockRejectedValue(stale);
-    render(<Account loggedOut={vi.fn()} />);
+    render(<User loggedOut={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'Security' }));
     expect(screen.queryByText(/This change needs a fresh login/)).toBeNull();
 
     fireEvent.click(await screen.findByRole('button', { name: /Remove$/ }));
@@ -140,7 +142,8 @@ describe('Account', () => {
 
   it('shows the prompt after removing the authenticator app needs a fresh login', async () => {
     mocks.removeTOTP.mockRejectedValue(stale);
-    render(<Account loggedOut={vi.fn()} />);
+    render(<User loggedOut={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'Security' }));
 
     fireEvent.click(await screen.findByRole('button', { name: 'Remove the authenticator app' }));
 
@@ -151,7 +154,8 @@ describe('Account', () => {
     mocks.removePasskey.mockRejectedValue(
       new ApiError({ status: 409, num: 10021, code: 'LAST_FACTOR', message: 'Last factor.' }),
     );
-    render(<Account loggedOut={vi.fn()} />);
+    render(<User loggedOut={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'Security' }));
 
     fireEvent.click(await screen.findByRole('button', { name: /Remove$/ }));
 
@@ -166,14 +170,14 @@ describe('Account', () => {
     ['review', 'The login was flagged for review.'],
   ])('shows the sentence for the %s decision', async (decision, sentence) => {
     useAuth.setState({ decision });
-    render(<Account loggedOut={vi.fn()} />);
+    render(<User loggedOut={vi.fn()} />);
 
     expect(await screen.findByText(sentence)).toBeTruthy();
   });
 
   it('asks for a fresh login before a sensitive change when the session is limited', async () => {
     useAuth.setState({ flags: Flag.Authorized | Flag.Limited });
-    render(<Account loggedOut={vi.fn()} />);
+    render(<User loggedOut={vi.fn()} />);
 
     expect(await screen.findByText('Log in again before a sensitive change.')).toBeTruthy();
   });
@@ -182,7 +186,7 @@ describe('Account', () => {
     const loggedOut = vi.fn();
     const restart = vi.fn().mockResolvedValue(undefined);
     useAuth.setState({ restart });
-    render(<Account loggedOut={loggedOut} />);
+    render(<User loggedOut={loggedOut} />);
 
     fireEvent.click(await screen.findByRole('button', { name: /Log out/ }));
 

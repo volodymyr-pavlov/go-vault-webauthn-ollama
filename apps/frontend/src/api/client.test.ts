@@ -253,7 +253,7 @@ describe('the devices', () => {
     get.mockRestore();
   });
 
-  it('deletes an account with a passkey in two steps and signs the challenge of the server', async () => {
+  it('deletes a user with a passkey in two steps and signs the challenge of the server', async () => {
     rememberSession('77');
     const options = { publicKey: { challenge: 'abc' } };
     const fetchMock = vi
@@ -263,18 +263,18 @@ describe('the devices', () => {
     vi.stubGlobal('fetch', fetchMock);
     const get = vi.spyOn(webauthn, 'getPasskey').mockResolvedValue({ id: 'credential' });
 
-    await api.deleteAccount();
+    await api.deleteUser();
 
     expect(get).toHaveBeenCalledWith(options);
     const first = fetchMock.mock.calls[0] as [string, RequestInit];
     const second = fetchMock.mock.calls[1] as [string, RequestInit];
-    expect(first[0]).toBe('/v1/account/deletion');
-    expect(second[0]).toBe('/v1/account/deletion/confirm');
+    expect(first[0]).toBe('/v1/user/deletion');
+    expect(second[0]).toBe('/v1/user/deletion/confirm');
     expect(JSON.parse(second[1].body as string)).toEqual({ response: { id: 'credential' } });
     get.mockRestore();
   });
 
-  it('deletes an account without a passkey after the fresh login and asks for no assertion', async () => {
+  it('deletes a user without a passkey after the fresh login and asks for no assertion', async () => {
     rememberSession('77');
     const fetchMock = vi
       .fn()
@@ -283,7 +283,7 @@ describe('the devices', () => {
     vi.stubGlobal('fetch', fetchMock);
     const get = vi.spyOn(webauthn, 'getPasskey');
 
-    await api.deleteAccount();
+    await api.deleteUser();
 
     expect(get).not.toHaveBeenCalled();
     const second = fetchMock.mock.calls[1] as [string, RequestInit];

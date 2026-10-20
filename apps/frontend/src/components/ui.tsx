@@ -1,3 +1,4 @@
+import { LoaderCircle } from 'lucide-react';
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
 
 /** The props of [Card]. */
@@ -50,19 +51,56 @@ const tones: Record<Tone, string> = {
     'border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950',
 };
 
+/** The props of [Spinner]. */
+interface SpinnerProps {
+  /** The size in pixels. The default is 16. */
+  size?: number;
+}
+
+/** Shows a turning ring. It is decoration: the text next to it says what the page waits for. */
+export function Spinner({ size = 16 }: SpinnerProps) {
+  return <LoaderCircle size={size} className="animate-spin" aria-hidden="true" />;
+}
+
 /** The props of [Button]. It accepts every prop of a button element, and passes the other props to it. */
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** The look of the button. The default is primary. */
   tone?: Tone;
+  /** True while the action of the button runs. The button shows a spinner in front of its text and does not click. */
+  working?: boolean;
 }
 
 /** Shows a button in the given tone. */
-export function Button({ tone = 'primary', ...button }: ButtonProps) {
+export function Button({ tone = 'primary', working = false, children, disabled, ...button }: ButtonProps) {
   return (
     <button
       className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${tones[tone]}`}
+      disabled={disabled || working}
+      aria-busy={working || undefined}
       {...button}
-    />
+    >
+      {working ? <Spinner /> : null}
+      {children}
+    </button>
+  );
+}
+
+/** The props of [Waiting]. */
+interface WaitingProps {
+  /** What the page waits for, in a sentence. */
+  children: ReactNode;
+}
+
+/** Shows a spinner with a sentence, in a status region, for a wait that takes seconds. */
+export function Waiting({ children }: WaitingProps) {
+  return (
+    <div
+      role="status"
+      className="flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800 dark:border-sky-900 dark:bg-sky-950 dark:text-sky-200"
+    >
+      <Spinner />
+      <span>{children}</span>
+    </div>
   );
 }
 
@@ -85,6 +123,40 @@ export function Notice({ kind, children }: NoticeProps) {
   return (
     <div role={kind === 'error' ? 'alert' : 'status'} className={`rounded-lg border px-3 py-2 text-sm ${styles[kind]}`}>
       {children}
+    </div>
+  );
+}
+
+/** The props of [Tabs]. */
+interface TabsProps<T extends string> {
+  /** The accessible name of the group of tabs. */
+  label: string;
+  /** The tabs, in the order they are shown. */
+  items: { id: T; label: string }[];
+  /** The id of the tab that is open. */
+  active: T;
+  /** Called with the id of the tab that the person chose. */
+  onChange: (id: T) => void;
+}
+
+/** Shows a row of tabs. The tab that is open has the selected state, and the others are plain. */
+export function Tabs<T extends string>({ label, items, active, onChange }: TabsProps<T>) {
+  return (
+    <div role="tablist" aria-label={label} className="flex gap-1 rounded-xl bg-slate-200 p-1 dark:bg-slate-800">
+      {items.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          role="tab"
+          aria-selected={active === item.id}
+          onClick={() => onChange(item.id)}
+          className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium ${
+            active === item.id ? 'bg-white shadow-sm dark:bg-slate-900' : 'text-slate-600 dark:text-slate-400'
+          }`}
+        >
+          {item.label}
+        </button>
+      ))}
     </div>
   );
 }

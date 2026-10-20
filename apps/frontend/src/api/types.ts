@@ -76,6 +76,34 @@ export interface TOTPEnrollment {
   uri: string;
 }
 
+/** One account of the authenticator with its current code. */
+export interface Account {
+  /** The identifier of the account. */
+  account_xid: string;
+  /** The service that the account belongs to. It may be empty. */
+  issuer: string;
+  /** The name of the account at the issuer. It may be empty. */
+  label: string;
+  /** The number of digits of a code. */
+  digits: number;
+  /** The length of a step in seconds. */
+  period: number;
+  /** The current code. It is empty when Vault has no secret for the account. */
+  code: string;
+  /** How many seconds the code lasts. */
+  valid_for: number;
+  /** True when Vault has no secret for the account, so there is no code. */
+  unavailable?: boolean;
+}
+
+/** The accounts that an import added. */
+export interface AccountsAdded {
+  /** The accounts that were added. */
+  accounts: Account[];
+  /** How many entries of a Google export were left out because they are counter-based. */
+  skipped: number;
+}
+
 /** The error object of a response from the API. */
 export interface ErrorBody {
   /** The HTTP status of the response. */

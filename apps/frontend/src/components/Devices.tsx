@@ -7,9 +7,9 @@ import { useStep } from '@/lib/useStep';
 import { useAuth } from '@/store/auth';
 
 /**
- * Lists the sessions of the account, so the person sees where it is in use, and ends the ones that are not theirs.
+ * Lists the sessions of the user, so the person sees where it is in use, and ends the ones that are not theirs.
  *
- * Removing a session needs a fresh login. The account screen shows the prompt for it, because the store marks the
+ * Removing a session needs a fresh login. The user screen shows the prompt for it, because the store marks the
  * state stale when the API asks.
  */
 export function Devices() {

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { KeyRound } from 'lucide-react';
 import { api } from '@/api/client';
 import type { Decision } from '@/api/types';
-import { Button, Card, Field, Notice } from '@/components/ui';
+import { Button, Card, Field, Notice, Waiting } from '@/components/ui';
 import { useStep } from '@/lib/useStep';
 import { getPasskey, supported } from '@/lib/webauthn';
 import { useAuth } from '@/store/auth';
@@ -25,6 +25,10 @@ export function Login({ notice }: LoginProps) {
   const [code, setCode] = useState('');
   const step = useStep();
 
+  // The server checks the risk of a login, and it asks a local model for advice. This takes seconds, so the page says
+  // what it waits for. The state is true only while the server works, not while the browser asks for the passkey.
+  const [checking, setChecking] = useState(false);
+
   const finish = async (decision: Decision, userXid: string): Promise<void> => {
     note(decision, userXid);
     await sync();
@@ -34,8 +38,13 @@ export function Login({ notice }: LoginProps) {
     step.run(async () => {
       const options = await call(() => api.beginLogin());
       const assertion = await getPasskey(options);
-      const result = await call(() => api.completeLogin(assertion));
-      await finish(result.decision, result.user_xid);
+      setChecking(true);
+      try {
+        const result = await call(() => api.completeLogin(assertion));
+        await finish(result.decision, result.user_xid);
+      } finally {
+        setChecking(false);
+      }
     });
 
   const withPassword = (): Promise<boolean> =>
@@ -47,14 +56,20 @@ export function Login({ notice }: LoginProps) {
 
   const withCode = (): Promise<boolean> =>
     step.run(async () => {
-      const result = await call(() => api.totp(code.trim()));
-      await finish(result.decision, result.user_xid);
+      setChecking(true);
+      try {
+        const result = await call(() => api.totp(code.trim()));
+        await finish(result.decision, result.user_xid);
+      } finally {
+        setChecking(false);
+      }
     });
 
   return (
     <Card title="Log in">
       {notice ? <Notice kind="info">{notice}</Notice> : null}
       {step.error ? <Notice kind="error">{step.error}</Notice> : null}
+      {checking ? <Waiting>Checking your login for risks. This can take a few seconds.</Waiting> : null}
 
       {stage === 'email' ? (
         <EmailStage
@@ -101,7 +116,7 @@ function EmailStage({
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Button disabled={busy || !supported()} onClick={onPasskey}>
+        <Button working={busy} disabled={!supported()} onClick={onPasskey}>
           <KeyRound size={16} /> Log in with a passkey
         </Button>
         <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -119,7 +134,7 @@ function EmailStage({
           label="Email"
           type="email"
           autoComplete="username"
-          hint="Only for an account that has a password and an authenticator app, not a passkey."
+          hint="Only if you have a password and an authenticator app, not a passkey."
           value={email}
           required
           onChange={(event) => setEmail(event.target.value)}
@@ -166,7 +181,7 @@ function PasswordStage({
         onChange={(event) => setPassword(event.target.value)}
       />
       <div className="flex gap-2">
-        <Button type="submit" disabled={busy || password === ''}>
+        <Button type="submit" working={busy} disabled={password === ''}>
           Continue
         </Button>
         <Button tone="plain" type="button" onClick={onBack}>
@@ -207,7 +222,7 @@ function CodeStage({
         required
         onChange={(event) => setCode(event.target.value)}
       />
-      <Button type="submit" disabled={busy || code.trim().length !== 6}>
+      <Button type="submit" working={busy} disabled={code.trim().length !== 6}>
         Log in
       </Button>
     </form>

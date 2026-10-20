@@ -4,8 +4,8 @@ import { Button, Card, Field, Notice } from '@/components/ui';
 import { type Step, useStep } from '@/lib/useStep';
 import { useAuth } from '@/store/auth';
 
-/** The answer to a request or a claim. It is the same for every address, so it never shows if the account exists. */
-const neutral = 'If the account exists, we sent an email.';
+/** The answer to a request or a claim. It is the same for every address, so it never shows if the user exists. */
+const neutral = 'If the address is registered, we sent an email.';
 
 /** The waiting time of a delayed recovery, the life of a grant token and the shape of the tokens in the emails. */
 const recoveryDelay = '72 hours';
@@ -15,7 +15,7 @@ const tokenShape = '64 hex digits, from the email.';
 const mutedText = 'text-sm text-slate-600 dark:text-slate-400';
 
 /**
- * Recovers an account in two ways. A recovery code works at once. A person who lost the codes too can ask for a
+ * Recovers a login in two ways. A recovery code works at once. A person who lost the codes too can ask for a
  * delayed recovery: the owner can cancel it by email during the waiting time, and an operator must approve it.
  *
  * Both ways end the same: the session may add a new passkey or authenticator app, and the person then logs in with it.
@@ -37,7 +37,7 @@ function WithCode() {
   const step = useStep();
 
   return (
-    <Card title="Recover an account">
+    <Card title="Recover your login">
       <p className="text-sm text-slate-600 dark:text-slate-400">
         A recovery code does not log you in. It lets you add a new passkey or authenticator app, and then you log in
         with it.
@@ -85,8 +85,8 @@ function WithoutCodes() {
     <Card title="I lost my recovery codes too">
       <p className={mutedText}>
         If you have no passkey, no authenticator app, and no recovery codes, you can ask for a delayed recovery. It
-        takes time on purpose: the owner of the account gets an email and can cancel the request during the waiting
-        time. Use the same email address in steps 1 and 3.
+        takes time on purpose: the owner gets an email and can cancel the request during the waiting time. Use the same
+        email address in steps 1 and 3.
       </p>
       {notice ? <Notice kind="info">{notice}</Notice> : null}
 
@@ -153,7 +153,7 @@ function AskStep({
         }}
       >
         <Field
-          label="Email of the account"
+          label="Your email"
           type="email"
           value={email}
           required
@@ -174,7 +174,7 @@ function CancelStep({ busy, setNotice, step }: StepProps & { step: Step }) {
 
   return (
     <RecoveryStep title="Step 2. Cancel a request that is not yours" error={step.error}>
-      <p className={mutedText}>If you own the account and did not ask, paste the cancel token from the email.</p>
+      <p className={mutedText}>If this is your login and you did not ask, paste the cancel token from the email.</p>
       <form
         className="space-y-3"
         onSubmit={(event) => {

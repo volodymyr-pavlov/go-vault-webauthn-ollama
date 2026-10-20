@@ -4,6 +4,8 @@ import { signRequest } from '@/lib/httpsig';
 import { sessionXid } from '@/lib/sessionId';
 import { getPasskey } from '@/lib/webauthn';
 import type {
+  Account,
+  AccountsAdded,
   Authorized,
   DeviceView,
   ErrorBody,
@@ -152,7 +154,7 @@ export const api = {
   completeTOTP: (code: string) => request<void>('POST', '/v1/enroll/totp/complete', { body: { code } }),
   issueRecoveryCodes: () => request<{ codes: string[] }>('POST', '/v1/enroll/recovery'),
 
-  // Without an email the login is discoverable: the passkey names the account.
+  // Without an email the login is discoverable: the passkey names the user.
   beginLogin: (email?: string) =>
     request<WebAuthnOptions>('POST', '/v1/auth/passkey', { body: email ? { email } : {} }),
   completeLogin: (response: unknown) =>
@@ -171,7 +173,7 @@ export const api = {
   passkeys: () => request<{ passkeys: PasskeyView[] }>('GET', '/v1/passkeys'),
   /**
    * Removes a passkey after a fresh passkey assertion. The server returns options whose challenge is bound to this
-   * removal. The browser signs them with a passkey of the account, and the server removes the passkey when the
+   * removal. The browser signs them with a passkey of the user, and the server removes the passkey when the
    * assertion verifies.
    *
    * @param xid - The external ID of the passkey to remove.
@@ -183,23 +185,39 @@ export const api = {
     await request<void>('POST', `/v1/passkeys/${xid}/removal/confirm`, { body: { response } });
   },
   /**
-   * Reads the personal data that the service keeps about the account. It needs a fresh login.
+   * Reads the personal data that the service keeps about the user. It needs a fresh login.
    *
    * @returns The export as the server sends it.
    * @throws ApiError if the request is refused.
    */
-  exportAccount: () => request<Record<string, unknown>>('GET', '/v1/account/export'),
+  exportUser: () => request<Record<string, unknown>>('GET', '/v1/user/export'),
   /**
-   * Deletes the account. If the account has a passkey, the browser signs a challenge that is bound to the deletion. An
-   * account without a passkey is deleted after the fresh login alone.
+   * Deletes the user. If the user has a passkey, the browser signs a challenge that is bound to the deletion. An
+   * user without a passkey is deleted after the fresh login alone.
    *
    * @throws ApiError if a step is refused.
    */
-  deleteAccount: async (): Promise<void> => {
-    const begun = await request<{ method: string; options?: WebAuthnOptions }>('POST', '/v1/account/deletion');
+  deleteUser: async (): Promise<void> => {
+    const begun = await request<{ method: string; options?: WebAuthnOptions }>('POST', '/v1/user/deletion');
     const body = begun.method === 'passkey' && begun.options ? { response: await getPasskey(begun.options) } : {};
-    await request<void>('POST', '/v1/account/deletion/confirm', { body });
+    await request<void>('POST', '/v1/user/deletion/confirm', { body });
   },
+  /**
+   * Lists the accounts of the authenticator with the codes that Vault makes now.
+   *
+   * @returns The accounts. A secret is never part of the answer.
+   */
+  accounts: () => request<{ accounts: Account[] }>('GET', '/v1/accounts'),
+  /**
+   * Adds accounts to the authenticator. A body holds either a link (otpauth:// or the otpauth-migration:// export of
+   * Google Authenticator) or a secret with an issuer and a label. It needs a fresh login.
+   *
+   * @param body - The link, or the secret with its issuer and label.
+   * @returns The accounts that were added and the number of entries that were left out.
+   */
+  addAccount: (body: { uri: string } | { secret: string; issuer: string; label: string }) =>
+    request<AccountsAdded>('POST', '/v1/accounts', { body }),
+  removeAccount: (xid: string) => request<void>('DELETE', `/v1/accounts/${xid}`),
   sessions: () => request<{ sessions: DeviceView[] }>('GET', '/v1/sessions'),
   removeSession: (xid: string) => request<void>('DELETE', `/v1/sessions/${xid}`),
   removeTOTP: () => request<void>('DELETE', '/v1/totp'),

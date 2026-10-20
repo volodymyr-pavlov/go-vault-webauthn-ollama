@@ -7,7 +7,7 @@ import { useAuth } from '@/store/auth';
 // The address of the test mail inbox. It is undefined when VITE_MAIL_URL is not set.
 const mailUrl = import.meta.env['VITE_MAIL_URL'] as string | undefined;
 
-/** Creates an account with an email and a password, then asks for the verification token that arrives by mail. */
+/** Creates a user with an email and a password, then asks for the verification token that arrives by mail. */
 export function Register() {
   const { call, sync } = useAuth.getState();
   const [email, setEmail] = useState('');

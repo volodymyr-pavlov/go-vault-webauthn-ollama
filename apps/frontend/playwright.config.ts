@@ -15,7 +15,14 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        // A fake video stream, and no dialog for the camera, so the scan can start in the camera test.
+        launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] },
+      },
+    },
     // The virtual authenticator of the passkey tests exists only in Chromium.
     { name: 'firefox', use: { ...devices['Desktop Firefox'] }, testIgnore: /passkey\.spec\.ts/ },
     { name: 'webkit', use: { ...devices['Desktop Safari'] }, testIgnore: /passkey\.spec\.ts/ },

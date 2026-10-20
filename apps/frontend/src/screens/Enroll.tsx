@@ -18,7 +18,7 @@ export function Enroll({ finished }: EnrollProps) {
 
   if (added) {
     return (
-      <Card title="Your account is ready">
+      <Card title="You are all set">
         <Notice kind="info">A factor was added. Save recovery codes if you wish, then log in with it.</Notice>
         <RecoveryCodes />
         <Button onClick={() => void restart(true).then(() => finished('Your factor was added. Log in with it now.'))}>

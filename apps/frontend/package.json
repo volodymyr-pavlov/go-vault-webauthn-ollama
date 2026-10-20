@@ -14,6 +14,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "jsqr": "1.4.0",
     "lucide-react": "^1.52.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.0",

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Tests for the list of devices of an account. */
+/** Tests for the list of devices of a user. */
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';

@@ -25,7 +25,7 @@ async function failWith(page: Page, path: string, status: number, code: string, 
   );
 }
 
-test('a wrong password for an authenticator app account is refused', async ({ page }) => {
+test('a wrong password for an authenticator app user is refused', async ({ page }) => {
   const email = uniqueEmail();
   await registerWithTotp(page, email, password);
 

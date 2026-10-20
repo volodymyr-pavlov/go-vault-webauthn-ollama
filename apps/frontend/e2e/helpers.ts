@@ -8,7 +8,7 @@ import type { BrowserContext, Page } from '@playwright/test';
 const mailUrl = process.env['E2E_MAIL_URL'] ?? 'http://127.0.0.1:8025';
 
 /**
- * Makes an email address, so each test registers its own account.
+ * Makes an email address, so each test registers its own user.
  *
  * @returns An address that no other test run uses.
  */
@@ -22,7 +22,7 @@ export interface Authenticator {
   remove: () => Promise<void>;
   /** Reads the passkeys that the authenticator holds, with their private keys. */
   credentials: () => Promise<Credential[]>;
-  /** Adds passkeys that another authenticator held, so this one can log in to the same accounts. */
+  /** Adds passkeys that another authenticator held, so this one can log in to the same users. */
   add: (credentials: Credential[]) => Promise<void>;
 }
 
@@ -82,7 +82,7 @@ interface MailMessage {
   To: { Address: string }[];
 }
 
-/** The password that the tests register accounts with. */
+/** The password that the tests register users with. */
 export const testPassword = 'correct horse battery staple';
 
 // Reads a JSON answer of Mailpit and fails with its status when Mailpit refuses.
@@ -101,7 +101,7 @@ const pause = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 
 /**
  * Reads the newest token of 64 hex digits from the mails that Mailpit received for an address.
  *
- * It checks every half second, up to 30 times. Use it for the verification mail, or, with `after`, when the account
+ * It checks every half second, up to 30 times. Use it for the verification mail, or, with `after`, when the user
  * already got an older mail and the test needs the token of a later one.
  *
  * @param email - The address that gets the mail.
@@ -130,7 +130,7 @@ export async function newestToken(email: string, after: string[] = []): Promise<
 /**
  * Reads the verification token from the mail that Mailpit received for an address.
  *
- * @param email - The address that the account registered with.
+ * @param email - The address that the user registered with.
  * @returns The verification token of 64 hex digits.
  * @throws Error if no mail with a verification token arrives.
  */
@@ -176,11 +176,11 @@ export function totpCode(secret: string, offset = 0): string {
 }
 
 /**
- * Registers an account with a password and verifies it with the verification token from the mail.
+ * Registers a user with a password and verifies it with the verification token from the mail.
  *
  * @param page - The page of the test.
  * @param email - The address to register.
- * @param password - The password of the account.
+ * @param password - The password of the user.
  */
 export async function registerAndVerify(page: Page, email: string, password: string): Promise<void> {
   await page.goto('/');
@@ -205,14 +205,14 @@ export async function addPasskey(page: Page, name: string): Promise<void> {
 }
 
 /**
- * Registers an account with a password, enrolls an authenticator app and returns to the login screen.
+ * Registers a user with a password, enrolls an authenticator app and returns to the login screen.
  *
- * The account has no passkey, so any browser can run it. The first code is spent, so a later login must use the
+ * The user has no passkey, so any browser can run it. The first code is spent, so a later login must use the
  * code of the next step.
  *
  * @param page - The page of the test.
  * @param email - The address to register.
- * @param password - The password of the account.
+ * @param password - The password of the user.
  * @returns The base32 secret of the authenticator app, for [totpCode].
  */
 export async function registerWithTotp(page: Page, email: string, password: string): Promise<string> {
@@ -231,7 +231,7 @@ export async function registerWithTotp(page: Page, email: string, password: stri
  * Types the email and the password on the login screen and moves to the step that asks for the code.
  *
  * @param page - The page of the test, on the login screen.
- * @param email - The address of the account.
+ * @param email - The address of the user.
  * @param pass - The password to type.
  */
 export async function submitPassword(page: Page, email: string, pass: string): Promise<void> {
@@ -253,11 +253,11 @@ export async function submitCode(page: Page, code: string): Promise<void> {
 }
 
 /**
- * Registers an account with a passkey and logs in with it.
+ * Registers a user with a passkey and logs in with it.
  *
  * @param page - The page of the test. It needs a virtual authenticator.
  * @param email - The address to register.
- * @param password - The password of the account.
+ * @param password - The password of the user.
  * @param name - The name of the passkey.
  */
 export async function registerWithPasskey(page: Page, email: string, password: string, name: string): Promise<void> {
@@ -323,7 +323,7 @@ export async function approveNewestRecovery(): Promise<string> {
 /**
  * Clears what the stand remembers about the address of the tests: the rate limit counters and the sessions of the
  * address. All tests come from one address. Without this, a long run reaches the limits and the page shows "Too many
- * tries". The failures and the many accounts of the earlier tests also raise the risk score of every later login, until
+ * tries". The failures and the many users of the earlier tests also raise the risk score of every later login, until
  * the risk check refuses it.
  */
 export async function flushRateLimits(): Promise<void> {

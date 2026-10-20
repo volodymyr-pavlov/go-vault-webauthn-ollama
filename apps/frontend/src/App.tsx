@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
-import { Notice } from '@/components/ui';
+import { Notice, Waiting } from '@/components/ui';
 import { Flag, canEnroll, has } from '@/lib/flags';
 import { errorMessage } from '@/lib/errorMessage';
-import { Account } from '@/screens/Account';
+import { User } from '@/screens/User';
 import { Enroll } from '@/screens/Enroll';
 import { Login } from '@/screens/Login';
 import { Recover } from '@/screens/Recover';
@@ -21,7 +21,7 @@ const tabs: { id: Tab; label: string }[] = [
 /**
  * Opens the session of the device key and shows the screen that fits the session flags.
  *
- * The screen is the account, the enrollment of a first factor, or the log in, register and recover views. The page
+ * The screen is the page of the logged-in user, the enrollment of a first factor, or the log in, register and recover views. The page
  * holds no token: the device key signs every request, and the server finds the session by the key ID.
  */
 export function App() {
@@ -38,9 +38,9 @@ export function App() {
   if (failure) {
     screen = <Notice kind="error">The service is not reachable. {failure}</Notice>;
   } else if (!ready) {
-    screen = <p className="text-sm text-slate-500">Opening a session…</p>;
+    screen = <Waiting>Opening a session…</Waiting>;
   } else if (has(flags, Flag.Authorized)) {
-    screen = <Account loggedOut={() => setTab('login')} />;
+    screen = <User loggedOut={() => setTab('login')} />;
   } else if (canEnroll(flags)) {
     screen = (
       <Enroll

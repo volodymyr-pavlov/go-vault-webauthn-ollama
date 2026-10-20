@@ -12,7 +12,7 @@ interface PasskeyAddProps {
   done: () => void;
 }
 
-/** Registers a passkey for the account of the session. It warns when the browser cannot make passkeys. */
+/** Registers a passkey for the user of the session. It warns when the browser cannot make passkeys. */
 export function PasskeyAdd({ done }: PasskeyAddProps) {
   const call = useAuth((state) => state.call);
   const [name, setName] = useState('');

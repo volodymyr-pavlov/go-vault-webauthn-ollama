@@ -11,7 +11,7 @@ interface AuthState {
   ready: boolean;
   /** The set of session flag bits. See [Flag]. */
   flags: number;
-  /** The identifier of the account, or empty. */
+  /** The identifier of the user, or empty. */
   userXid: string;
   /** The result of the last risk check, or empty. */
   decision: Decision | '';
@@ -34,10 +34,10 @@ interface AuthState {
   /** Reads the state of the session from the server. */
   sync: () => Promise<void>;
   /**
-   * Stores the decision and the account from a login answer, and clears the stale mark.
+   * Stores the decision and the user from a login answer, and clears the stale mark.
    *
    * @param decision - The result of the risk check.
-   * @param userXid - The identifier of the account.
+   * @param userXid - The identifier of the user.
    */
   note: (decision: Decision, userXid: string) => void;
   /**

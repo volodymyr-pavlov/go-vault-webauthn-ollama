@@ -3,7 +3,7 @@ import { ApiError } from '@/api/client';
 
 const messages: Record<string, string> = {
   AUTHENTICATION_FAILED: 'That did not work. Check what you typed and try again.',
-  PASSKEY_ACCOUNT: 'This account uses a passkey. Log in with it instead.',
+  PASSKEY_USER: 'You use a passkey. Log in with it instead.',
   RISK_DENIED: 'The login was refused. Contact support if this is you.',
   STALE_AUTHENTICATION: 'Log in again to do this. A sensitive action needs a fresh login.',
   LAST_FACTOR: 'The last factor cannot be removed. Add another one first.',
@@ -37,7 +37,7 @@ export function errorMessage(error: unknown): string {
     }
 
     if (error.name === 'InvalidStateError') {
-      return 'This device already has a passkey for this account.';
+      return 'This device already has a passkey for you.';
     }
 
     return error.message || 'The passkey step failed.';

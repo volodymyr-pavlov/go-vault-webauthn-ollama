@@ -3,6 +3,7 @@
  * Protocol, so only the chromium project runs this file (see `testIgnore` in playwright.config.ts).
  */
 import { expect, type Page } from '@playwright/test';
+import QRCode from 'qrcode';
 import { test } from './fixtures';
 import {
   addPasskey,
@@ -24,26 +25,29 @@ test('a new user registers, adds a passkey, and logs in with it', async ({ page,
   await registerAndVerify(page, uniqueEmail(), password);
 
   await addPasskey(page, 'Test laptop');
-  await expect(page.getByText('Your account is ready')).toBeVisible();
+  await expect(page.getByText('You are all set')).toBeVisible();
   await page.getByRole('button', { name: 'Continue to log in' }).click();
 
-  // The passkey names the account, so the page sends no email and the person types none.
+  // The passkey names the user, so the page sends no email and the person types none.
   await expect(page.getByLabel('Email')).toHaveValue('');
   const begin = page.waitForRequest('**/v1/auth/passkey');
   await page.getByRole('button', { name: 'Log in with a passkey' }).click();
   expect((await begin).postDataJSON()).toEqual({});
 
   await expect(page.getByText('You are logged in')).toBeVisible();
+  await page.getByRole('tab', { name: 'Security' }).click();
   await expect(page.getByText('Test laptop')).toBeVisible();
+  await page.getByRole('tab', { name: 'Data' }).click();
   await expect(page.getByText('Risk score')).toBeVisible();
 });
 
-test('a passkey account is refused an authenticator app and issues recovery codes', async ({ page, context }) => {
+test('a passkey user is refused an authenticator app and issues recovery codes', async ({ page, context }) => {
   await addVirtualAuthenticator(context, page);
   await registerWithPasskey(page, uniqueEmail(), password, 'Manage test');
 
+  await page.getByRole('tab', { name: 'Security' }).click();
   await page.getByRole('button', { name: 'Set up an authenticator app' }).click();
-  await expect(page.getByText('This account uses a passkey')).toBeVisible();
+  await expect(page.getByText('You use a passkey')).toBeVisible();
 
   await page.getByRole('button', { name: 'Issue recovery codes' }).click();
   await expect(page.getByText('Save these codes now')).toBeVisible();
@@ -80,6 +84,7 @@ test('the session survives a reload until the person logs out', async ({ page, c
 
   await page.reload();
   await expect(page.getByText('You are logged in')).toBeVisible();
+  await page.getByRole('tab', { name: 'Security' }).click();
   await expect(page.getByText('Reload test')).toBeVisible();
 
   await page.getByRole('button', { name: 'Log out' }).click();
@@ -95,6 +100,7 @@ test('the last passkey cannot be removed, and another one can', async ({ page, c
   const removeFirst = (await addVirtualAuthenticator(context, page)).remove;
   await registerWithPasskey(page, uniqueEmail(), password, 'First key');
 
+  await page.getByRole('tab', { name: 'Security' }).click();
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
   await expect(page.getByRole('alert')).toHaveText('The last factor cannot be removed. Add another one first.');
   await expect(page.getByText('First key')).toBeVisible();
@@ -114,20 +120,113 @@ test('the last passkey cannot be removed, and another one can', async ({ page, c
   await expect(page.getByText('Second key')).toBeVisible();
 });
 
-test('the person downloads their data and deletes the account with a passkey', async ({ page, context }) => {
+test('the person downloads their data and deletes the user with a passkey', async ({ page, context }) => {
   await addVirtualAuthenticator(context, page);
   const email = uniqueEmail();
   await registerWithPasskey(page, email, password, 'Erase me');
 
+  await page.getByRole('tab', { name: 'Data' }).click();
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Download my data' }).click();
   expect((await download).suggestedFilename()).toBe('my-data.json');
 
-  await page.getByRole('button', { name: 'Delete my account' }).click();
-  await page.getByRole('button', { name: 'Yes, delete my account for good' }).click();
+  await page.getByRole('button', { name: 'Delete my data' }).click();
+  await page.getByRole('button', { name: 'Yes, delete everything for good' }).click();
 
   await expect(page.getByText('You are logged in')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Log in with a passkey' })).toBeVisible();
+});
+
+test('the authenticator keeps typed, linked, scanned and imported accounts and shows their codes', async ({
+  page,
+  context,
+}) => {
+  await addVirtualAuthenticator(context, page);
+  await registerWithPasskey(page, uniqueEmail(), password, 'Key');
+
+  const codes = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Authenticator codes' }) });
+
+  // A typed secret, with an issuer and a name.
+  await codes.getByLabel(/Link or secret/).fill('jbsw y3dp ehpk 3pxp');
+  await codes.getByLabel('Issuer').fill('GitHub');
+  await codes.getByLabel('Account name').fill('alice@example.com');
+  await codes.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(codes.getByLabel('Code for GitHub · alice@example.com', { exact: true })).toHaveText(/^\d{3} \d{3}$/);
+
+  // A pasted otpauth link with eight digits.
+  await codes
+    .getByLabel(/Link or secret/)
+    .fill('otpauth://totp/Example:bob?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&digits=8&issuer=Example');
+  await codes.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(codes.getByLabel('Code for Example · bob', { exact: true })).toHaveText(/^\d{4} \d{4}$/);
+
+  // A picture of a QR code.
+  const picture = await QRCode.toBuffer('otpauth://totp/Scanned:carol?secret=JBSWY3DPEHPK3PXP&issuer=Scanned', {
+    scale: 8,
+  });
+  await codes.getByLabel('QR image').setInputFiles({ name: 'qr.png', mimeType: 'image/png', buffer: picture });
+  await expect(codes.getByLabel('Code for Scanned · carol', { exact: true })).toHaveText(/^\d{3} \d{3}$/);
+
+  // A Google Authenticator export with one time-based and one counter-based account.
+  const entry = (name: string, secret: string, kind: number) => {
+    const body = Buffer.concat([
+      Buffer.from([0x0a, secret.length]),
+      Buffer.from(secret),
+      Buffer.from([0x12, name.length]),
+      Buffer.from(name),
+      Buffer.from([0x30, kind]),
+    ]);
+    return Buffer.concat([Buffer.from([0x0a, body.length]), body]);
+  };
+  const payload = Buffer.concat([
+    entry('google-one', 'google-secret-aaaa', 2),
+    entry('google-two', 'google-secret-bbbb', 1),
+  ]);
+  await codes
+    .getByLabel(/Link or secret/)
+    .fill(`otpauth-migration://offline?data=${encodeURIComponent(payload.toString('base64'))}`);
+  await codes.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(codes.getByLabel('Code for google-one', { exact: true })).toHaveText(/^\d{3} \d{3}$/);
+  await expect(codes.getByText(/1 counter-based account was left out/)).toBeVisible();
+
+  // The codes change when their step ends, and a removed account is gone.
+  await codes.getByRole('button', { name: 'Remove Example · bob' }).click();
+  await expect(codes.getByLabel('Code for Example · bob', { exact: true })).toHaveCount(0);
+  await expect(codes.getByLabel('Code for GitHub · alice@example.com', { exact: true })).toBeVisible();
+});
+
+test('the page shows a wait message while the server checks the risk of a login', async ({ page, context }) => {
+  await addVirtualAuthenticator(context, page);
+  await registerWithPasskey(page, uniqueEmail(), password, 'Slow check');
+  await page.getByRole('button', { name: 'Log out' }).click();
+
+  // The server asks a local model for advice, which takes seconds. The test slows the answer down to show the wait.
+  await page.route('**/v1/auth/passkey/complete', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    await route.continue();
+  });
+
+  await page.getByRole('button', { name: 'Log in with a passkey' }).click();
+
+  await expect(page.getByRole('status').filter({ hasText: 'Checking your login for risks' })).toBeVisible();
+  await expect(page.getByText('You are logged in')).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Checking your login for risks' })).toHaveCount(0);
+});
+
+test.describe('the camera', () => {
+  // The chromium project of playwright.config.ts makes a fake video stream. The page may use the camera.
+  test.use({ permissions: ['camera'] });
+
+  test('the page is allowed to use the camera, so the scan starts', async ({ page, context }) => {
+    await addVirtualAuthenticator(context, page);
+    await registerWithPasskey(page, uniqueEmail(), password, 'Camera key');
+
+    await page.getByRole('button', { name: 'Scan with the camera' }).click();
+
+    await expect(page.locator('video')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Stop the camera' })).toBeVisible();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+  });
 });
 
 test('the page shows the decision and the refusals of a passkey login', async ({ page, context }) => {
@@ -182,29 +281,30 @@ test('an approved delayed recovery adds a new passkey and ends the old session',
     await addVirtualAuthenticator(other, device);
     await device.goto('/');
     await device.getByRole('button', { name: 'Recover' }).click();
-    await device.getByLabel('Email of the account').fill(email);
+    await device.getByLabel('Your email').fill(email);
     await device.getByRole('button', { name: 'Ask for a recovery' }).click();
-    await expect(device.getByText('If the account exists, we sent an email.')).toBeVisible();
+    await expect(device.getByText('If the address is registered, we sent an email.')).toBeVisible();
     const cancel = await newestToken(email, [verification]);
 
     // The operator ends the waiting time and approves the request, then the person claims the grant token.
     await approveNewestRecovery();
     await device.getByRole('button', { name: 'Send me the grant token' }).click();
-    await expect(device.getByText('If the account exists, we sent an email.')).toBeVisible();
+    await expect(device.getByText('If the address is registered, we sent an email.')).toBeVisible();
     await device.getByLabel('Grant token').fill(await newestToken(email, [verification, cancel]));
     await device.getByRole('button', { name: 'Use the grant token' }).click();
 
     await addPasskey(device, 'New laptop');
-    await expect(device.getByText('Your account is ready')).toBeVisible();
+    await expect(device.getByText('You are all set')).toBeVisible();
     await device.getByRole('button', { name: 'Continue to log in' }).click();
     await device.getByRole('button', { name: 'Log in with a passkey' }).click();
     await expect(device.getByText('You are logged in')).toBeVisible();
+    await device.getByRole('tab', { name: 'Security' }).click();
     await expect(device.getByText('New laptop')).toBeVisible();
   } finally {
     await other.close();
   }
 
-  // The recovery revokes the older sessions of the account, so the first page is logged out after a reload.
+  // The recovery revokes the older sessions of the user, so the first page is logged out after a reload.
   await page.reload();
   await expect(page.getByRole('button', { name: 'Log in with a passkey' })).toBeVisible();
   await expect(page.getByText('You are logged in')).toHaveCount(0);
@@ -254,6 +354,7 @@ test('the devices list shows the other login, and removing it logs that browser 
     await expect(device.getByText('You are logged in')).toBeVisible();
 
     await page.reload();
+    await page.getByRole('tab', { name: 'Security' }).click();
     const devices = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Devices' }) });
     await expect(devices.getByRole('listitem')).toHaveCount(2);
     await expect(devices.getByText('This device')).toHaveCount(1);
