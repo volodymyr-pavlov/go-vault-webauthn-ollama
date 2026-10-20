@@ -260,21 +260,21 @@ func baselineEvent(random *rand.Rand, id int) Event {
 // The attacks are the ones that the rules score low or only just medium, each with the reason why it exists:
 //
 //   - slow-stuffing is credential stuffing at low speed. The attacker holds a leaked list of valid passwords and tries
-//     each account once, from many different residential addresses, so no account has a failure and no address has a
+//     each user once, from many different residential addresses, so no user has a failure and no address has a
 //     burst. The only trace is a new device. Half of the logins come from a small proxy pool that reuses an address
-//     for several accounts, which sets the shared address signal.
-//   - same-country-new-device is an attacker who has the password of the account and who logs in from the country of the
+//     for several users, which sets the shared address signal.
+//   - same-country-new-device is an attacker who has the password of the user and who logs in from the country of the
 //     owner at a plausible hour. The signals are those of an honest new laptop, and one in four has a single failure
 //     from a stale password.
 //   - sim-swap is a takeover where the attacker moved the phone number of the owner to a new SIM, reset the password,
 //     enrolled a new factor and logged in with a fresh TOTP. It shows a factor enrolled within a day, a new device and,
 //     in three of four cases, an unusual hour.
-//   - recovery-abuse is a login with a new passkey right after an account recovery that the attacker started with a
+//   - recovery-abuse is a login with a new passkey right after a user recovery that the attacker started with a
 //     stolen recovery code, from a new device.
 //
 // The legitimate logins are the ones that look like attacks, so that the false positive rate means something:
 //
-//   - traveler is the owner in a new country on a new device, mostly at an unusual hour for the account, and in one of
+//   - traveler is the owner in a new country on a new device, mostly at an unusual hour for the user, and in one of
 //     four cases on the shared address of a hotel.
 //   - shift-worker is an owner who logs in at an unusual hour after a change of shift, and in one of five cases on a new
 //     device.

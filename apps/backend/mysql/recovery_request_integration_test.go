@@ -172,7 +172,7 @@ func TestRecoveryRequestCreateAndRead(t *testing.T) {
 }
 
 // TestRecoveryRequestCancelOnce proves that the cancel token closes the request exactly once and that an unknown token
-// changes nothing. A token that worked twice or on a closed request would let a stale email act on the account.
+// changes nothing. A token that worked twice or on a closed request would let a stale email act on the user.
 func TestRecoveryRequestCancelOnce(t *testing.T) {
 	ctx := context.Background()
 	r := newRecoveryStores()

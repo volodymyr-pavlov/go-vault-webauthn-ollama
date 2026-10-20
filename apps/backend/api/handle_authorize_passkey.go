@@ -27,7 +27,7 @@ var beginAuthorizePasskeyHandlerBodyArgsPool web.Pool[BeginAuthorizePasskeyHandl
 var responseHandlerBodyArgsPool web.Pool[ResponseHandlerBodyArgs]
 
 // BeginAuthorizePasskeyHandlerBodyArgs are the arguments of POST /auth/passkey. Email is optional: without it, the
-// login is discoverable and the passkey names the account.
+// login is discoverable and the passkey names the user.
 type BeginAuthorizePasskeyHandlerBodyArgs struct {
 	Email string `json:"email"`
 }
@@ -65,7 +65,7 @@ func (a *BeginAuthorizePasskeyHandlerBodyArgs) Validate() error {
 
 // BeginAuthorizePasskeyHandler handles POST /auth/passkey. It starts the passkey login for the email and keeps the
 // challenge on the session. A request without an email starts a discoverable login: the options list no credentials,
-// the browser offers the passkeys it holds for this site, and the passkey names the account when the login finishes.
+// the browser offers the passkeys it holds for this site, and the passkey names the user when the login finishes.
 //
 // An email with no usable passkey, known or not, gets options with a fake credential list. The list comes from a keyed
 // hash of the email, so the response does not show whether the email is registered. The completing step then fails in
@@ -215,7 +215,7 @@ func (a *ResponseHandlerBodyArgs) Validate() error {
 }
 
 // CompleteAuthorizePasskeyHandler handles POST /auth/passkey/complete. It verifies the assertion against the challenge
-// on the session and the passkeys of the account, advances the counter and completes the login. The risk engine decides
+// on the session and the passkeys of the user, advances the counter and completes the login. The risk engine decides
 // what the session may do.
 //
 // A counter that went backwards disables the passkey and refuses the login. The challenge is used up whether the
@@ -236,7 +236,7 @@ type CompleteAuthorizePasskeyHandler struct {
 // ServeHTTP implements [web.Handler]. It responds with an [AuthorizeResult].
 //
 // It returns [ErrAuthenticationFailed] if the challenge is missing or expired, the assertion does not verify, the
-// counter went backwards or the account cannot authenticate. It returns [ErrRiskDenied] if the risk engine refuses the
+// counter went backwards or the user cannot authenticate. It returns [ErrRiskDenied] if the risk engine refuses the
 // login.
 func (h *CompleteAuthorizePasskeyHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	bodyArgs := responseHandlerBodyArgsPool.Get()

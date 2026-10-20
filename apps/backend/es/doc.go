@@ -31,7 +31,7 @@
 //
 // # Records
 //
-// A [User] is an account. A [RecoveryCode] is the keyed hash of one single-use code of a user. A [Passkey] is one
+// A [User] is a user. A [RecoveryCode] is the keyed hash of one single-use code of a user. A [Passkey] is one
 // WebAuthn credential of a user. A [Session] is the sign-in of one device, found by the ID of its key. It collects one
 // flag for each step that passes and holds the state of the step in progress. The sessions of a user are also the
 // login history that the risk engine reads.

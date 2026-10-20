@@ -31,13 +31,13 @@ const (
 	ErrAuthenticationFailedNum
 	ErrForbiddenOriginNum
 	ErrRiskDeniedNum
-	ErrPasskeyAccountNum
+	ErrPasskeyUserNum
 	ErrLastFactorNum
 	ErrAlreadyEnrolledTOTPNum
 	ErrNoEnrolledTOTPNum
 	ErrNotFoundPasskeyNum
 	ErrTooManyRequestsNum
-	ErrNoAccountNum
+	ErrSessionWithoutUserNum
 	ErrNoBodyDeviceKeyNum
 	ErrMalformedBodyDeviceKeyNum
 	ErrNoHeaderRequestSignatureNum
@@ -45,6 +45,11 @@ const (
 	ErrNoParamSessionXIDNum
 	ErrNotFoundDeviceNum
 	ErrStaleRequestTimeNum
+	ErrNoParamAccountXIDNum
+	ErrNotFoundAccountNum
+	ErrNoBodyAccountNum
+	ErrMalformedAccountNum
+	ErrAccountLimitNum
 )
 
 // ErrNoBodyDeviceID is returned when the request body has no device ID.
@@ -186,7 +191,7 @@ var ErrStaleAuthentication = &web.Error{
 }
 
 // ErrAuthenticationFailed is the response to every failed factor. It is the same for a wrong password, a wrong code, a
-// bad assertion and a factor that the account does not accept. It is also the same for an account that does not exist.
+// bad assertion and a factor that the user does not accept. It is also the same for a user that does not exist.
 // The response does not show which one happened.
 var ErrAuthenticationFailed = &web.Error{
 	Status:  fasthttp.StatusUnauthorized,
@@ -211,15 +216,15 @@ var ErrRiskDenied = &web.Error{
 	Message: "The login was refused. Contact support if this is you.",
 }
 
-// ErrPasskeyAccount is returned when an account with a passkey tries to enroll a TOTP factor.
-var ErrPasskeyAccount = &web.Error{
+// ErrPasskeyUser is returned when a user with a passkey tries to enroll a TOTP factor.
+var ErrPasskeyUser = &web.Error{
 	Status:  fasthttp.StatusForbidden,
-	Num:     ErrPasskeyAccountNum,
-	Code:    "PASSKEY_ACCOUNT",
-	Message: "An account with a passkey takes no password or code.",
+	Num:     ErrPasskeyUserNum,
+	Code:    "PASSKEY_USER",
+	Message: "A user with a passkey takes no password or code.",
 }
 
-// ErrLastFactor is returned when a request would remove the last factor of the account.
+// ErrLastFactor is returned when a request would remove the last factor of the user.
 var ErrLastFactor = &web.Error{
 	Status:  fasthttp.StatusForbidden,
 	Num:     ErrLastFactorNum,
@@ -227,7 +232,7 @@ var ErrLastFactor = &web.Error{
 	Message: "The last factor cannot be removed. Enroll another one first.",
 }
 
-// ErrAlreadyEnrolledTOTP is returned when an account that has a confirmed TOTP factor starts to enroll another one.
+// ErrAlreadyEnrolledTOTP is returned when a user that has a confirmed TOTP factor starts to enroll another one.
 var ErrAlreadyEnrolledTOTP = &web.Error{
 	Status:  fasthttp.StatusForbidden,
 	Num:     ErrAlreadyEnrolledTOTPNum,
@@ -235,7 +240,7 @@ var ErrAlreadyEnrolledTOTP = &web.Error{
 	Message: "A code generator is enrolled already.",
 }
 
-// ErrNoEnrolledTOTP is returned when the account has no TOTP factor that waits for confirmation.
+// ErrNoEnrolledTOTP is returned when the user has no TOTP factor that waits for confirmation.
 var ErrNoEnrolledTOTP = &web.Error{
 	Status:  fasthttp.StatusForbidden,
 	Num:     ErrNoEnrolledTOTPNum,
@@ -243,15 +248,15 @@ var ErrNoEnrolledTOTP = &web.Error{
 	Message: "No code generator is being enrolled.",
 }
 
-// ErrNoAccount is returned when the session is bound to no account, but the endpoint needs one.
-var ErrNoAccount = &web.Error{
+// ErrSessionWithoutUser is returned when the session is bound to no user, but the endpoint needs one.
+var ErrSessionWithoutUser = &web.Error{
 	Status:  fasthttp.StatusForbidden,
-	Num:     ErrNoAccountNum,
-	Code:    "NO_ACCOUNT",
-	Message: "The session is bound to no account.",
+	Num:     ErrSessionWithoutUserNum,
+	Code:    "SESSION_WITHOUT_USER",
+	Message: "The session is bound to no user.",
 }
 
-// ErrNotFoundPasskey is returned when the account has no passkey with the xid of the request path.
+// ErrNotFoundPasskey is returned when the user has no passkey with the xid of the request path.
 var ErrNotFoundPasskey = &web.Error{
 	Status:  fasthttp.StatusNotFound,
 	Num:     ErrNotFoundPasskeyNum,
@@ -313,7 +318,7 @@ var ErrNoParamSessionXID = &web.Error{
 	Message: "The session identifier is not specified.",
 }
 
-// ErrNotFoundDevice is returned when the account has no active session with the identifier of the request path.
+// ErrNotFoundDevice is returned when the user has no active session with the identifier of the request path.
 var ErrNotFoundDevice = &web.Error{
 	Status:  fasthttp.StatusNotFound,
 	Num:     ErrNotFoundDeviceNum,
@@ -329,4 +334,45 @@ var ErrStaleRequestTime = &web.Error{
 	Num:     ErrStaleRequestTimeNum,
 	Code:    "STALE_REQUEST_TIME",
 	Message: "The clock of the device differs from the clock of the server. Set the clock and try again.",
+}
+
+// ErrNoParamAccountXID is returned when the request path has no account xid.
+var ErrNoParamAccountXID = &web.Error{
+	Status:  fasthttp.StatusBadRequest,
+	Num:     ErrNoParamAccountXIDNum,
+	Code:    "NO_PARAM_ACCOUNT_XID",
+	Message: "The request path must contain an account xid.",
+}
+
+// ErrNotFoundAccount is returned when the user has no account with the xid of the request path.
+var ErrNotFoundAccount = &web.Error{
+	Status:  fasthttp.StatusNotFound,
+	Num:     ErrNotFoundAccountNum,
+	Code:    "NOT_FOUND_ACCOUNT",
+	Message: "The account is not found.",
+}
+
+// ErrNoBodyAccount is returned when the body has neither a link nor a secret, or has both.
+var ErrNoBodyAccount = &web.Error{
+	Status:  fasthttp.StatusBadRequest,
+	Num:     ErrNoBodyAccountNum,
+	Code:    "NO_BODY_ACCOUNT",
+	Message: "Send either an otpauth link or a secret, not both.",
+}
+
+// ErrMalformedAccount is returned when the link or the secret cannot be imported. The message does not repeat
+// what the client sent.
+var ErrMalformedAccount = &web.Error{
+	Status:  fasthttp.StatusBadRequest,
+	Num:     ErrMalformedAccountNum,
+	Code:    "MALFORMED_ACCOUNT",
+	Message: "The link or the secret cannot be imported. Check that it is a time-based user.",
+}
+
+// ErrAccountLimit is returned when an import would leave more accounts in the authenticator than the limit.
+var ErrAccountLimit = &web.Error{
+	Status:  fasthttp.StatusConflict,
+	Num:     ErrAccountLimitNum,
+	Code:    "ACCOUNT_LIMIT",
+	Message: "The authenticator cannot hold more accounts.",
 }

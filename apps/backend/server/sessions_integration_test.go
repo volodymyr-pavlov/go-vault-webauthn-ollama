@@ -34,8 +34,8 @@ func TestIdleSessionEnds(t *testing.T) {
 	s.refuses(s.call(http.MethodGet, "/v1/session", session.Handle, nil), http.StatusUnauthorized, "UNAUTHORIZED_SESSION")
 }
 
-// TestDevicesList proves that the owner can see the logged-in sessions of the account, can end another one, and cannot
-// touch the session of another account.
+// TestDevicesList proves that the owner can see the logged-in sessions of the user, can end another one, and cannot
+// touch the session of another user.
 func TestDevicesList(t *testing.T) {
 	s := newStand(t)
 	email := fmt.Sprintf("ivan-%d@example.com", time.Now().UnixNano())
@@ -54,7 +54,7 @@ func TestDevicesList(t *testing.T) {
 	var list api.ListSessionsHandlerResult
 	s.decode(s.call(http.MethodGet, "/v1/sessions", laptop.Handle, nil), &list)
 	if len(list.Sessions) != 2 {
-		t.Fatalf("the account has two logged-in sessions: %+v", list.Sessions)
+		t.Fatalf("the user has two logged-in sessions: %+v", list.Sessions)
 	}
 	var current int
 	for _, device := range list.Sessions {
@@ -69,7 +69,7 @@ func TestDevicesList(t *testing.T) {
 		t.Fatalf("exactly one session is current: %+v", list.Sessions)
 	}
 
-	// Another account cannot end the session of this one.
+	// Another user cannot end the session of this one.
 	other := s.open()
 	otherEmail := fmt.Sprintf("jane-%d@example.com", time.Now().UnixNano())
 	s.register(other.Handle, otherEmail)
@@ -166,7 +166,7 @@ func mustSessionID(t *testing.T, s *stand, xid uint64) uint64 {
 	return session.ID
 }
 
-// TestSharedAddressSignal proves that the login handlers set the shared-address signal when enough different accounts
+// TestSharedAddressSignal proves that the login handlers set the shared-address signal when enough different users
 // tried the same address within the hour, because that is the pattern of credential stuffing from a small pool of
 // addresses. The advisor mock records the summary that the risk engine sends, which carries the signals.
 func TestSharedAddressSignal(t *testing.T) {
@@ -185,13 +185,13 @@ func TestSharedAddressSignal(t *testing.T) {
 		return s.advisor.Last().Signals
 	}
 
-	// Four earlier accounts are not enough. The fifth account sets the signal.
-	for i := range ai.SharedAddressAccounts - 1 {
+	// Four earlier users are not enough. The fifth user sets the signal.
+	for i := range ai.SharedAddressUsers - 1 {
 		if signals := login(fmt.Sprintf("shared%d", i)); signals.Has(ai.SignalSharedAddress) {
-			t.Fatalf("account %d must not set the signal: %s", i+1, signals.List())
+			t.Fatalf("user %d must not set the signal: %s", i+1, signals.List())
 		}
 	}
 	if signals := login("fifth"); !signals.Has(ai.SignalSharedAddress) {
-		t.Fatalf("the fifth account must set the signal: %s", signals.List())
+		t.Fatalf("the fifth user must set the signal: %s", signals.List())
 	}
 }

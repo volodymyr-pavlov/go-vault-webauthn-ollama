@@ -48,10 +48,10 @@ func shapeOf(data []byte) string {
 	return strings.Join(list, "\n")
 }
 
-// TestPasskeyOptionsDoNotRevealAccounts proves that the start of a passkey login gives the same status and the same
-// response shape for an account with a passkey, an account without one and an unknown address, and that the fake list
+// TestPasskeyOptionsDoNotRevealUsers proves that the start of a passkey login gives the same status and the same
+// response shape for a user with a passkey, a user without one and an unknown address, and that the fake list
 // of credentials for an unknown address is deterministic, so asking twice does not show that the address is unknown.
-func TestPasskeyOptionsDoNotRevealAccounts(t *testing.T) {
+func TestPasskeyOptionsDoNotRevealUsers(t *testing.T) {
 	s := newStand(t)
 	withPasskey := fmt.Sprintf("with-%d@example.com", time.Now().UnixNano())
 	without := fmt.Sprintf("without-%d@example.com", time.Now().UnixNano())
@@ -77,8 +77,8 @@ func TestPasskeyOptionsDoNotRevealAccounts(t *testing.T) {
 
 	real, empty, fake := start(withPasskey), start(without), start(unknown)
 
-	// Same status and same shape, whether the account has a passkey, has none or does not exist.
-	for name, a := range map[string]apiResponse{"an account without a passkey": empty, "an unknown address": fake} {
+	// Same status and same shape, whether the user has a passkey, has none or does not exist.
+	for name, a := range map[string]apiResponse{"a user without a passkey": empty, "an unknown address": fake} {
 		if a.Status != real.Status {
 			t.Fatalf("%s: status %d, want %d", name, a.Status, real.Status)
 		}

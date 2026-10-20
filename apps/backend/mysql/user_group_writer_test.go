@@ -120,8 +120,8 @@ func (f *enrollFakes) checkCalls(t *testing.T, want ...string) {
 	}
 }
 
-func newPasskeyRemover(f *enrollFakes) *AccountGroupWriter {
-	return &AccountGroupWriter{
+func newPasskeyRemover(f *enrollFakes) *UserGroupWriter {
+	return &UserGroupWriter{
 		Database:       newFakeDatabase(f.log),
 		UserTx:         f.user,
 		PasskeyTx:      f.passkey,
@@ -136,7 +136,7 @@ func TestPasskeyRemover(t *testing.T) {
 		{ID: 2},
 	}
 
-	group := es.AccountGroup{
+	group := es.UserGroup{
 		Passkey: es.Passkey{ID: 1},
 	}
 
@@ -161,7 +161,7 @@ func TestPasskeyRemoverKeepsTheLastFactor(t *testing.T) {
 		},
 	}
 
-	group := es.AccountGroup{
+	group := es.UserGroup{
 		Passkey: es.Passkey{ID: 1},
 	}
 
@@ -191,7 +191,7 @@ func TestPasskeyRemoverStopsOnFailure(t *testing.T) {
 	}
 	f.failures["passkey.update"] = errEnrollStep
 
-	if _, err := newPasskeyRemover(f).WriteOne(t.Context(), es.AccountGroup{}, es.RemovePasskey); !errors.Is(err, errEnrollStep) {
+	if _, err := newPasskeyRemover(f).WriteOne(t.Context(), es.UserGroup{}, es.RemovePasskey); !errors.Is(err, errEnrollStep) {
 		t.Fatalf("got %v", err)
 	}
 
@@ -200,24 +200,24 @@ func TestPasskeyRemoverStopsOnFailure(t *testing.T) {
 
 func TestTOTPEnroller(t *testing.T) {
 	f := newEnrollFakes()
-	writer := &AccountGroupWriter{
+	writer := &UserGroupWriter{
 		Database: newFakeDatabase(f.log),
 		UserTx:   f.user,
 	}
 
-	if _, err := writer.WriteOne(t.Context(), es.AccountGroup{}, es.WriteCreate); !errors.Is(err, es.ErrNoArguments) {
+	if _, err := writer.WriteOne(t.Context(), es.UserGroup{}, es.WriteCreate); !errors.Is(err, es.ErrNoArguments) {
 		t.Fatalf("create: %v", err)
 	}
 
-	if _, err := writer.WriteOne(t.Context(), es.AccountGroup{}, es.ConfirmTOTP); err != nil {
+	if _, err := writer.WriteOne(t.Context(), es.UserGroup{}, es.ConfirmTOTP); err != nil {
 		t.Fatal(err)
 	}
 
 	f.checkCalls(t, "begin", "user.update", "commit")
 }
 
-func newTOTPRemover(f *enrollFakes) *AccountGroupWriter {
-	return &AccountGroupWriter{
+func newTOTPRemover(f *enrollFakes) *UserGroupWriter {
+	return &UserGroupWriter{
 		Database:       newFakeDatabase(f.log),
 		UserTx:         f.user,
 		PasskeyBatchTx: f.passkeys,
@@ -229,11 +229,11 @@ func TestTOTPRemover(t *testing.T) {
 	f.user.locked = es.User{TOTPCiphertext: "vault:v1:x"}
 	f.passkeys.passkeys = []es.Passkey{{ID: 1}}
 
-	if _, err := newTOTPRemover(f).WriteOne(t.Context(), es.AccountGroup{}, es.WriteCreate); !errors.Is(err, es.ErrNoArguments) {
+	if _, err := newTOTPRemover(f).WriteOne(t.Context(), es.UserGroup{}, es.WriteCreate); !errors.Is(err, es.ErrNoArguments) {
 		t.Fatalf("create: %v", err)
 	}
 
-	if _, err := newTOTPRemover(f).WriteOne(t.Context(), es.AccountGroup{}, es.RemoveTOTP); err != nil {
+	if _, err := newTOTPRemover(f).WriteOne(t.Context(), es.UserGroup{}, es.RemoveTOTP); err != nil {
 		t.Fatal(err)
 	}
 
@@ -243,7 +243,7 @@ func TestTOTPRemover(t *testing.T) {
 func TestTOTPRemoverRefuses(t *testing.T) {
 	f := newEnrollFakes()
 
-	if _, err := newTOTPRemover(f).WriteOne(t.Context(), es.AccountGroup{}, es.RemoveTOTP); !errors.Is(err, es.ErrNoTOTPSecret) {
+	if _, err := newTOTPRemover(f).WriteOne(t.Context(), es.UserGroup{}, es.RemoveTOTP); !errors.Is(err, es.ErrNoTOTPSecret) {
 		t.Fatalf("no secret: %v", err)
 	}
 
@@ -256,31 +256,31 @@ func TestTOTPRemoverRefuses(t *testing.T) {
 		Flags: es.PasskeyFlagRemoved,
 	}}
 
-	if _, err := newTOTPRemover(f).WriteOne(t.Context(), es.AccountGroup{}, es.RemoveTOTP); !errors.Is(err, es.ErrLastFactor) {
+	if _, err := newTOTPRemover(f).WriteOne(t.Context(), es.UserGroup{}, es.RemoveTOTP); !errors.Is(err, es.ErrLastFactor) {
 		t.Fatalf("last factor: %v", err)
 	}
 
 	f.checkCalls(t, "begin", "user.lock", "passkeys.read", "rollback")
 }
 
-// TestDeleteAccountRunsEveryDeleteInOrder proves that the deletion locks the user first, deletes the children before the
+// TestDeleteUserRunsEveryDeleteInOrder proves that the deletion locks the user first, deletes the children before the
 // user, erases the request log by the external ID, and fails as a whole if a delete fails.
-func TestDeleteAccountRunsEveryDeleteInOrder(t *testing.T) {
+func TestDeleteUserRunsEveryDeleteInOrder(t *testing.T) {
 	f := newEnrollFakes()
 	f.user.locked = es.User{
 		ID:      4,
 		UserXID: 99,
 	}
-	writer := &AccountGroupWriter{
+	writer := &UserGroupWriter{
 		Database: newFakeDatabase(f.log),
 		UserTx:   f.user,
 	}
 
-	group, err := writer.WriteOne(context.Background(), es.AccountGroup{
+	group, err := writer.WriteOne(context.Background(), es.UserGroup{
 		User: es.User{
 			ID: 4,
 		},
-	}, es.DeleteAccount)
+	}, es.DeleteUser)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Initializes the dev-mode Vault of the stand: the Transit engine, the two keys, the policy of the backend and its
+# Initializes the dev-mode Vault of the stand: the Transit engine, the two keys, the TOTP engine for the authenticator, the policy of the backend and its
 # AppRole, then hands the backend its identity through the volume /handoff: the role ID in a file, and a wrapping token
 # that unwraps to a fresh secret ID. The backend unwraps it at startup, which uses it up; a second unwrap fails, which
 # is how a stolen handoff shows. The job runs on every `up`, so a restarted backend gets a fresh token.
@@ -28,6 +28,11 @@ fi
 # not decrypt with the context of another. None of the keys is exportable, and none allows a plaintext backup.
 vault write -f transit/keys/totp type=aes256-gcm96 derived=true exportable=false allow_plaintext_backup=false
 vault write -f transit/keys/mac type=hmac key_size=32 exportable=false allow_plaintext_backup=false
+
+# The TOTP engine holds the secrets of the authenticator. Vault makes the codes, and a secret never comes back out.
+if ! vault secrets list -format=json | grep -q '"authenticator/"'; then
+	vault secrets enable -path=authenticator totp
+fi
 
 vault policy write backend /init/vault-policy.hcl
 

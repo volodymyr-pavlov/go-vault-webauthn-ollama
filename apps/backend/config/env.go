@@ -36,6 +36,7 @@ const (
 	KindSession         = 3
 	KindRecoveryCode    = 4
 	KindRecoveryRequest = 5
+	KindAccount         = 6
 )
 
 // Env holds every concrete dependency of the server, one field each. [NewEnv] builds it once from [Options]. The
@@ -71,7 +72,7 @@ type Env struct {
 	// HTTPRequestWriter saves the row of each request that the API received.
 	HTTPRequestWriter es.Writer[es.HTTPRequest]
 
-	// HTTPRequestBatchReader lists the request log rows of one user. The export of an account reads them.
+	// HTTPRequestBatchReader lists the request log rows of one user. The export of a user reads them.
 	HTTPRequestBatchReader es.BatchReader[es.HTTPRequest]
 
 	SessionReader      es.Reader[es.Session]
@@ -79,17 +80,27 @@ type Env struct {
 	SessionBatchReader es.BatchReader[es.Session]
 	SessionTx          es.Tx[es.Session, es.SessionFlag]
 
-	// SessionGroupWriter, AccountGroupWriter and RecoveryGroupWriter write the units of work of the API. Each write
+	// SessionGroupWriter, UserGroupWriter and RecoveryGroupWriter write the units of work of the API. Each write
 	// runs in one transaction and ends with the audit event of the change.
-	SessionGroupWriter  es.Writer[es.SessionGroup]
-	AccountGroupWriter  es.Writer[es.AccountGroup]
-	RecoveryGroupWriter es.Writer[es.RecoveryGroup]
+	SessionGroupWriter es.Writer[es.SessionGroup]
+	UserGroupWriter    es.Writer[es.UserGroup]
+
+	// AccountReader, AccountBatchReader and AccountGroupWriter keep the rows of the authenticator.
+	// AuthenticatorKeyWriter and AuthenticatorKeyReader are the TOTP engine of Vault, which keeps the secrets and makes
+	// the codes.
+	AccountReader          es.Reader[es.Account]
+	AccountBatchReader     es.BatchReader[es.Account]
+	AccountGroupWriter     es.Writer[es.AccountGroup]
+	AuthenticatorKeyWriter es.Writer[es.AuthenticatorKey]
+	AuthenticatorKeyReader es.Reader[es.AuthenticatorKey]
+	RecoveryGroupWriter    es.Writer[es.RecoveryGroup]
 
 	UserSnowflake            *snowid.Snowflake
 	PasskeySnowflake         *snowid.Snowflake
 	SessionSnowflake         *snowid.Snowflake
 	RecoveryCodeSnowflake    *snowid.Snowflake
 	RecoveryRequestSnowflake *snowid.Snowflake
+	AccountSnowflake         *snowid.Snowflake
 
 	RelyingParty    *auth.RelyingParty
 	RequestVerifier es.Reader[es.SignedRequest]
@@ -208,6 +219,12 @@ func (env *Env) connect(ctx context.Context, opts Options) error {
 	env.VaultLease = lease
 	env.TransitWriter = transit
 
+	authenticator := &vault.AuthenticatorClient{
+		API: client,
+	}
+	env.AuthenticatorKeyWriter = authenticator
+	env.AuthenticatorKeyReader = authenticator
+
 	queryBuilder := mysql.NewQueryBuilder(db)
 	env.UserReader = &mysql.UserReader{
 		Database: db,
@@ -286,7 +303,18 @@ func (env *Env) connect(ctx context.Context, opts Options) error {
 		RecoveryCodeTx:    env.RecoveryCodeTx,
 		RecoveryRequestTx: env.RecoveryRequestTx,
 	}
+	env.AccountReader = &mysql.AccountReader{
+		Database: db,
+	}
+	env.AccountBatchReader = &mysql.AccountBatchReader{
+		Database: db,
+	}
 	env.AccountGroupWriter = &mysql.AccountGroupWriter{
+		Database:    db,
+		SystemClock: env.SystemClock,
+		UserTx:      env.UserTx,
+	}
+	env.UserGroupWriter = &mysql.UserGroupWriter{
 		Database:       db,
 		SystemClock:    env.SystemClock,
 		UserTx:         env.UserTx,
@@ -310,6 +338,7 @@ func (env *Env) connect(ctx context.Context, opts Options) error {
 	env.SessionSnowflake = snowid.NewSnowflake(KindSession, opts.Instance)
 	env.RecoveryCodeSnowflake = snowid.NewSnowflake(KindRecoveryCode, opts.Instance)
 	env.RecoveryRequestSnowflake = snowid.NewSnowflake(KindRecoveryRequest, opts.Instance)
+	env.AccountSnowflake = snowid.NewSnowflake(KindAccount, opts.Instance)
 
 	env.RelyingParty, err = auth.NewRelyingParty(auth.RelyingPartyOptions{
 		RPID:    opts.RPID,
@@ -442,9 +471,11 @@ func (e *Env) Validate() error {
 		return fmt.Errorf("the field HTTPRequestWriter %w", ErrMissingFromEnv)
 	case e.SessionReader == nil || e.SessionWriter == nil || e.SessionBatchReader == nil || e.SessionTx == nil:
 		return fmt.Errorf("the session stores %w", ErrMissingFromEnv)
-	case e.SessionGroupWriter == nil || e.AccountGroupWriter == nil || e.RecoveryGroupWriter == nil:
+	case e.AccountReader == nil || e.AccountBatchReader == nil || e.AccountGroupWriter == nil || e.AuthenticatorKeyWriter == nil || e.AuthenticatorKeyReader == nil:
+		return fmt.Errorf("the authenticator stores %w", ErrMissingFromEnv)
+	case e.SessionGroupWriter == nil || e.UserGroupWriter == nil || e.RecoveryGroupWriter == nil:
 		return fmt.Errorf("the group writers %w", ErrMissingFromEnv)
-	case e.UserSnowflake == nil || e.PasskeySnowflake == nil || e.SessionSnowflake == nil || e.RecoveryCodeSnowflake == nil || e.RecoveryRequestSnowflake == nil:
+	case e.UserSnowflake == nil || e.PasskeySnowflake == nil || e.SessionSnowflake == nil || e.RecoveryCodeSnowflake == nil || e.RecoveryRequestSnowflake == nil || e.AccountSnowflake == nil:
 		return fmt.Errorf("the snowflakes %w", ErrMissingFromEnv)
 	case e.RelyingParty == nil:
 		return fmt.Errorf("the field RelyingParty %w", ErrMissingFromEnv)

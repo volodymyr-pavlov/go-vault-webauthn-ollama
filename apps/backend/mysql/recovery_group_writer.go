@@ -87,8 +87,8 @@ func (s *RecoveryGroupWriter) issueGrant(tx *sql.Tx, group es.RecoveryGroup) (es
 }
 
 // redeemGrant redeems the grant of group.Request. In this order it revokes every other session of the user, binds the
-// current session to the account, uses the grant up. The current session is not among the
-// revoked sessions, because it has no account yet. A user without another session is not an error.
+// current session to the user, uses the grant up. The current session is not among the
+// revoked sessions, because it has no user yet. A user without another session is not an error.
 //
 // The lock order is the sessions of the user, the recovery request. It returns
 // [es.ErrNoUpdatedRows] if the grant is unknown, used, expired or not approved, and then it changes nothing.

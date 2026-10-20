@@ -9,7 +9,7 @@ type SessionGroup struct {
 	// Session names the session by ID and holds the fields to write. Each intent documents which of them it reads.
 	Session Session
 
-	// User is the account of the intent. [OpenRegistry] creates it. [VerifyRegistry] and the login intents name it by
+	// User is the user of the intent. [OpenRegistry] creates it. [VerifyRegistry] and the login intents name it by
 	// ID. If the ID is zero, an intent that updates the user leaves it as it is.
 	User User
 
@@ -21,11 +21,11 @@ type SessionGroup struct {
 	RecoveryCode RecoveryCode
 }
 
-// AccountGroup is the unit of work that is anchored at one user. A [Writer] changes the factors of the account in
+// UserGroup is the unit of work that is anchored at one user. A [Writer] changes the factors of the user in
 // one transaction. Each intent locks the user first.
 //
-// The [Op] of the write sets exactly one of the intents in [AccountIntents].
-type AccountGroup struct {
+// The [Op] of the write sets exactly one of the intents in [UserIntents].
+type UserGroup struct {
 	// User names the owner by ID. For [ConfirmTOTP] it also holds the TOTPCiphertext and the TOTPLastStep of the
 	// accepted code.
 	User User
@@ -51,6 +51,6 @@ type RecoveryGroup struct {
 	Request RecoveryRequest
 
 	// Session names the current session of [RedeemRecoveryGrant] by ID. Flags holds the bit of the step and UserID the
-	// account.
+	// user.
 	Session Session
 }

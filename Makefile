@@ -37,6 +37,7 @@ test-integration: ## the tests that need Docker: the stores on MySQL, the API en
 fuzz: ## the fuzz tests for a few seconds each
 	cd $(BACKEND) && $(GO) test -run='^$$' -fuzz=FuzzParseAdvice -fuzztime=20s ./ai
 	cd $(BACKEND) && $(GO) test -run='^$$' -fuzz=FuzzSplit -fuzztime=20s ./vault
+	cd $(BACKEND) && $(GO) test -run='^$$' -fuzz=FuzzParseURI -fuzztime=20s ./totp
 
 vet: ## go vet ./...
 	cd $(BACKEND) && $(GO) vet -tags integration ./...

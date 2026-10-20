@@ -21,10 +21,10 @@ type LoginAttempt struct {
 	// Session is the session that the login belongs to.
 	Session es.Session
 
-	// User is the account that logs in, with its failure counters.
+	// User is the user that logs in, with its failure counters.
 	User es.User
 
-	// Passkeys are the passkeys of the account.
+	// Passkeys are the passkeys of the user.
 	Passkeys []es.Passkey
 
 	// Factor is the set of factors that the person just proved.
@@ -37,14 +37,14 @@ type LoginAttempt struct {
 	Outcome ai.Outcome
 }
 
-// RiskAssessor implements [es.Reader] of [LoginAttempt]. It turns the history of the account and of the address into
+// RiskAssessor implements [es.Reader] of [LoginAttempt]. It turns the history of the user and of the address into
 // the risk signals of a login and asks the [ai.Engine] for the decision. The summary that the engine sees holds a
-// pseudonym of the account, never the account itself. The passkey and TOTP handlers share one.
+// pseudonym of the user, never the user itself. The passkey and TOTP handlers share one.
 type RiskAssessor struct {
 	// Sessions lists the earlier sessions, which are the login history.
 	Sessions es.BatchReader[es.Session]
 
-	// Transit makes the pseudonym of the account.
+	// Transit makes the pseudonym of the user.
 	Transit es.Writer[es.Transit]
 
 	// Engine decides on the signals.
@@ -116,8 +116,8 @@ func (r *RiskAssessor) ReadOne(ctx context.Context, a LoginAttempt, _ es.Op) (Lo
 	}
 
 	// The history of the address covers the longer window of the shared-address signal. Only the failures inside the
-	// shorter failure window count, and every other account that tried this address counts once.
-	accounts := map[uint64]struct{}{
+	// shorter failure window count, and every other user that tried this address counts once.
+	users := map[uint64]struct{}{
 		user.ID: {},
 	}
 	for _, s := range fromAddress {
@@ -126,7 +126,7 @@ func (r *RiskAssessor) ReadOne(ctx context.Context, a LoginAttempt, _ es.Op) (Lo
 		}
 
 		if s.UserID != 0 {
-			accounts[s.UserID] = struct{}{}
+			users[s.UserID] = struct{}{}
 		}
 
 		if s.UserID != user.ID && s.CreatedAt.After(now.Add(-ai.FailureWindow)) && s.Failures < math.MaxUint16-failed {
@@ -134,14 +134,14 @@ func (r *RiskAssessor) ReadOne(ctx context.Context, a LoginAttempt, _ es.Op) (Lo
 		}
 	}
 
-	if len(accounts) >= ai.SharedAddressAccounts {
+	if len(users) >= ai.SharedAddressUsers {
 		signals = signals.With(ai.SignalSharedAddress)
 	}
 
 	signals = signals.WithFailedAttempts(int(min(failed, ai.MaxFailedAttempts)))
 	signals = signals.WithTOTPFailures(int(min(user.TOTPFailures, ai.MaxTOTPFailures)))
 
-	// The first login of an account has no device to compare with. A device is new only if the account has logged in
+	// The first login of a user has no device to compare with. A device is new only if the user has logged in
 	// before from other devices.
 	if logins > 0 && !knownDevice {
 		signals = signals.With(ai.SignalNewDevice)
@@ -194,8 +194,8 @@ func (r *RiskAssessor) ReadOne(ctx context.Context, a LoginAttempt, _ es.Op) (Lo
 	return a, nil
 }
 
-// pseudonymOf returns the pseudonym of the account: the first eight bytes of its Transit MAC, in hex. The pseudonym is
-// stable for the account and tells nothing about it.
+// pseudonymOf returns the pseudonym of the user: the first eight bytes of its Transit MAC, in hex. The pseudonym is
+// stable for the user and tells nothing about it.
 func pseudonymOf(ctx context.Context, transit es.Writer[es.Transit], userXID uint64) (string, error) {
 	raw, err := macBytesOf(ctx, transit, "pseudonym", strconv.FormatUint(userXID, 10))
 	if err != nil {

@@ -30,9 +30,12 @@ var resourceNames = map[es.ResourceCode]string{
 	ListSessions:             "list_sessions",
 	RemoveSession:            "remove_session",
 	BeginRemovePasskey:       "begin_remove_passkey",
-	BeginDeleteAccount:       "begin_delete_account",
-	DeleteAccount:            "delete_account",
-	ExportAccount:            "export_account",
+	BeginDeleteUser:          "begin_delete_user",
+	DeleteUser:               "delete_user",
+	ExportUser:               "export_user",
+	AddAccount:               "add_account",
+	ListAccounts:             "list_accounts",
+	RemoveAccount:            "remove_account",
 }
 
 // ResourceName returns the name of the endpoint with the code, such as "authorize_password". It returns "unknown" for a

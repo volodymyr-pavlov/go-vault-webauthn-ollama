@@ -24,6 +24,8 @@ path "transit/encrypt/totp" { capabilities = ["update"] }
 path "transit/decrypt/totp" { capabilities = ["update"] }
 path "transit/rewrap/totp" { capabilities = ["update"] }
 path "transit/hmac/mac" { capabilities = ["update"] }
+path "authenticator/keys/*" { capabilities = ["create", "update", "delete"] }
+path "authenticator/code/*" { capabilities = ["read"] }
 `
 
 // startVault runs Vault in dev mode. It returns a root client and a function that removes the container.
@@ -95,6 +97,11 @@ func setup(t *testing.T, root *api.Client) (roleID, wrappingToken string) {
 	ctx := context.Background()
 	if err := root.Sys().MountWithContext(ctx, "transit", &api.MountInput{
 		Type: "transit",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.Sys().MountWithContext(ctx, "authenticator", &api.MountInput{
+		Type: "totp",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -274,4 +281,85 @@ func TestTransitWithRealVault(t *testing.T) {
 		t.Fatal("the backend must not read the TOTP key")
 	}
 	fmt.Fprintln(os.Stderr, "the real Vault behaves like the stand-in of vaulttest")
+}
+
+func TestAuthenticatorWithRealVault(t *testing.T) {
+	root, purge := startVault(t)
+	defer purge()
+	roleID, wrappingToken := setup(t, root)
+	ctx := context.Background()
+
+	backend, err := api.NewClient(root.CloneConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Login(ctx, backend, LoginOptions{
+		RoleID:        roleID,
+		WrappingToken: wrappingToken,
+		Logger:        slog.New(slog.DiscardHandler),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	client := &AuthenticatorClient{
+		API: backend,
+	}
+
+	// A key made from a secret gives a code of the digits that the key asks for, and the secret does not come back.
+	secret := "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+	if _, err := client.WriteOne(ctx, es.AuthenticatorKey{
+		Name:      "u1-a1",
+		Secret:    secret,
+		Issuer:    "Example",
+		Label:     "alice",
+		Algorithm: "SHA1",
+		Digits:    8,
+		Period:    30,
+	}, es.WriteCreate); err != nil {
+		t.Fatal(err)
+	}
+
+	read, err := client.ReadOne(ctx, es.AuthenticatorKey{
+		Name: "u1-a1",
+	}, 0)
+	if err != nil || len(read.Code) != 8 || read.Secret != "" {
+		t.Fatalf("read the code: %+v, %v", read, err)
+	}
+
+	// The backend cannot read the key itself, and it cannot list the keys: the secret never comes back.
+	if _, err := backend.Logical().ReadWithContext(ctx, "authenticator/keys/u1-a1"); err == nil {
+		t.Fatal("the policy must not let the backend read a key")
+	}
+
+	if _, err := backend.Logical().ListWithContext(ctx, "authenticator/keys"); err == nil {
+		t.Fatal("the policy must not let the backend list the keys")
+	}
+
+	// Deleting a key twice is not an error, and a code of a missing key is [es.ErrNotFound].
+	for range 2 {
+		if _, err := client.WriteOne(ctx, es.AuthenticatorKey{
+			Name: "u1-a1",
+		}, es.DeleteAuthenticatorKey); err != nil {
+			t.Fatalf("delete: %v", err)
+		}
+	}
+
+	if _, err := client.ReadOne(ctx, es.AuthenticatorKey{
+		Name: "u1-a1",
+	}, 0); !errors.Is(err, es.ErrNotFound) {
+		t.Fatalf("the code of a deleted key: %v, want ErrNotFound", err)
+	}
+
+	// SHA-256 and SHA-512 keys work too.
+	for _, algorithm := range []string{"SHA256", "SHA512"} {
+		if _, err := client.WriteOne(ctx, es.AuthenticatorKey{
+			Name:      "u1-" + algorithm,
+			Secret:    secret,
+			Algorithm: algorithm,
+			Digits:    6,
+			Period:    30,
+		}, es.WriteCreate); err != nil {
+			t.Fatalf("create a %s key: %v", algorithm, err)
+		}
+	}
 }

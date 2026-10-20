@@ -2,7 +2,7 @@ package es
 
 import "time"
 
-// User is an account.
+// User is a person who registered with an email and logs in with a passkey, or with a password and a code.
 //
 // A [Reader] identifies a user by ID, UserXID, Handle or Email, in that order. A [Writer] update identifies a user by
 // ID and writes the fields that are set. A [Tx] locks a user by ID, so that two logins cannot race on a passkey
@@ -15,7 +15,7 @@ type User struct {
 	// the snowflake of users.
 	UserXID uint64
 
-	// Flags holds the state of the account. See [UserFlag].
+	// Flags holds the state of the user. See [UserFlag].
 	Flags UserFlag
 
 	// Email is the address that the user registered with, in lower case. The user logs in with it. It is not the
@@ -40,11 +40,11 @@ type User struct {
 	// TOTPFailures counts the wrong codes since the last accepted code. The throttle and the risk signals use it.
 	TOTPFailures uint16
 
-	// CreatedAt is the time when the account was created.
+	// CreatedAt is the time when the user was created.
 	CreatedAt time.Time
 }
 
-// CanAuthenticate reports whether the account may authenticate. It must be verified and not disabled.
+// CanAuthenticate reports whether the user may authenticate. It must be verified and not disabled.
 func (u User) CanAuthenticate() bool {
 	return u.Flags&UserFlagVerified != 0 && u.Flags&UserFlagDisabled == 0
 }

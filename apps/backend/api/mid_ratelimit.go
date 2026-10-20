@@ -20,12 +20,12 @@ import (
 )
 
 const (
-	// DefaultAddressPerMinute is the number of requests per minute that one address may send. DefaultAccountPerMinute
-	// is the same for one account. DefaultGlobalPerSecond is the number of requests per second that all callers share.
+	// DefaultAddressPerMinute is the number of requests per minute that one address may send. DefaultUserPerMinute
+	// is the same for one user. DefaultGlobalPerSecond is the number of requests per second that all callers share.
 	// A request over a budget is refused with status 429 and a Retry-After header. The budgets live in Redis, so every
 	// instance of the service shares them.
 	DefaultAddressPerMinute = 60
-	DefaultAccountPerMinute = 20
+	DefaultUserPerMinute    = 20
 	DefaultGlobalPerSecond  = 500
 
 	// DefaultSessionPerMinute is the number of sessions per minute that one address may open. A session is a database
@@ -39,15 +39,15 @@ const (
 var _ es.Writer[es.RateLimit] = &RateLimit{}
 
 // RateLimit limits the rate of requests with the GCRA limiter of redis_rate. [RateLimit.Middleware] limits by address
-// and for the whole service. [RateLimit.AccountMiddleware] limits by the email in the request body.
+// and for the whole service. [RateLimit.UserMiddleware] limits by the email in the request body.
 type RateLimit struct {
 	// Limiter counts the requests in Redis.
 	Limiter *redis_rate.Limiter
 
-	// Address, Account and Global are the budgets for one address, one account and the whole service. A zero budget
+	// Address, User and Global are the budgets for one address, one user and the whole service. A zero budget
 	// means the default.
 	Address redis_rate.Limit
-	Account redis_rate.Limit
+	User    redis_rate.Limit
 	Global  redis_rate.Limit
 
 	// SessionOpen is the budget of one address for opening sessions. A zero budget means the default.
@@ -59,7 +59,7 @@ type RateLimit struct {
 	Metrics *metrics.Metrics
 }
 
-// WriteOne implements [es.Writer]. With [es.WriteCreate] it takes one slot of the account budget for the Key of item
+// WriteOne implements [es.Writer]. With [es.WriteCreate] it takes one slot of the user budget for the Key of item
 // and returns item with Wait set. Wait is how long the caller must wait if the budget is spent, and zero if the request
 // may run now.
 //
@@ -69,14 +69,14 @@ func (m *RateLimit) WriteOne(ctx context.Context, item es.RateLimit, op es.Op) (
 		return item, es.ErrNoArguments
 	}
 
-	limit := m.Account
+	limit := m.User
 	if limit.IsZero() {
-		limit = redis_rate.PerMinute(DefaultAccountPerMinute)
+		limit = redis_rate.PerMinute(DefaultUserPerMinute)
 	}
 
-	result, err := m.Limiter.Allow(ctx, "account:"+item.Key, limit)
+	result, err := m.Limiter.Allow(ctx, "user:"+item.Key, limit)
 	if err != nil {
-		return item, fmt.Errorf("rate limit by account: %w", err)
+		return item, fmt.Errorf("rate limit by user: %w", err)
 	}
 
 	item.Wait = 0
@@ -88,14 +88,14 @@ func (m *RateLimit) WriteOne(ctx context.Context, item es.RateLimit, op es.Op) (
 	return item, nil
 }
 
-// AccountMiddleware returns the middleware that limits the rate by account. It reads the email from the JSON body and
-// takes one slot of the account budget for the SHA-256 hash of the email. A body with no email passes, and the handler
+// UserMiddleware returns the middleware that limits the rate by user. It reads the email from the JSON body and
+// takes one slot of the user budget for the SHA-256 hash of the email. A body with no email passes, and the handler
 // refuses it.
 //
 // The middleware returns [ErrTooManyRequests] with a Retry-After header if the budget is spent.
 //
 // Run it after the session middleware, so that a request without a valid session does not use a slot.
-func (m *RateLimit) AccountMiddleware() web.Middleware {
+func (m *RateLimit) UserMiddleware() web.Middleware {
 	return func(next web.HandlerFunc) web.HandlerFunc {
 		return func(ctx *fasthttp.RequestCtx) error {
 			email := strings.ToLower(strings.TrimSpace(gjson.GetBytes(ctx.PostBody(), "email").String()))
@@ -113,7 +113,7 @@ func (m *RateLimit) AccountMiddleware() web.Middleware {
 			}
 
 			if limit.Wait > 0 {
-				m.Metrics.RateLimited(metrics.ScopeAccount)
+				m.Metrics.RateLimited(metrics.ScopeUser)
 
 				return tooManyRequests(ctx, limit.Wait)
 			}

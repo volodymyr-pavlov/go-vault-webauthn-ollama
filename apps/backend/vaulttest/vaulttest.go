@@ -11,6 +11,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base32"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -21,9 +22,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/vault/api"
 	"github.com/tidwall/gjson"
+	"github.com/volodymyr-pavlov/go-vault-webauthn-ollama/apps/backend/totp"
 	"github.com/volodymyr-pavlov/go-vault-webauthn-ollama/apps/backend/vault"
 )
 
@@ -34,6 +37,13 @@ type key struct {
 	minDecryption int
 }
 
+// authenticatorKey is a key of the stand-in TOTP engine.
+type authenticatorKey struct {
+	secret []byte
+	digits int
+	period uint
+}
+
 // Server is the stand-in for Vault. [New] starts it.
 type Server struct {
 	// URL is the address of the server.
@@ -42,13 +52,17 @@ type Server struct {
 	http *httptest.Server
 	mu   sync.Mutex
 	keys map[string]*key
+
+	// authenticators are the keys of the stand-in TOTP engine, by name.
+	authenticators map[string]authenticatorKey
 }
 
 // New starts a server that has the keys "totp" and "mac". The server stops when the test ends.
 func New(t *testing.T) *Server {
 	t.Helper()
 	s := &Server{
-		keys: map[string]*key{},
+		keys:           map[string]*key{},
+		authenticators: map[string]authenticatorKey{},
 	}
 	s.Add("totp")
 	s.Add("mac")
@@ -73,6 +87,24 @@ func (s *Server) Client(t *testing.T) *vault.Client {
 	return &vault.Client{
 		API: client,
 	}
+}
+
+// AuthenticatorClient returns a [vault.AuthenticatorClient] for the server. It fails the test if it cannot make the
+// client.
+func (s *Server) AuthenticatorClient(t *testing.T) *vault.AuthenticatorClient {
+	t.Helper()
+
+	return &vault.AuthenticatorClient{
+		API: s.Client(t).API,
+	}
+}
+
+// AuthenticatorKeys returns the number of keys in the stand-in TOTP engine.
+func (s *Server) AuthenticatorKeys() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return len(s.authenticators)
 }
 
 // Close stops the server. A test can use it to simulate an outage of Vault.
@@ -182,6 +214,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewEncoder(w).Encode(unwrapped); err != nil {
 			http.Error(w, `{"errors":["encode failed"]}`, http.StatusInternalServerError)
 		}
+
+		return
+	}
+
+	if strings.HasPrefix(r.URL.Path, "/v1/authenticator/") {
+		s.serveAuthenticator(w, r)
 
 		return
 	}
@@ -334,4 +372,76 @@ func seal(version int, secret, plaintext []byte) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("vault:v%d:%s", version, base64.StdEncoding.EncodeToString(aead.Seal(nonce, nonce, plaintext, nil))), nil
+}
+
+// serveAuthenticator serves the part of the TOTP engine that the service uses: it creates and deletes a key at
+// /v1/authenticator/keys/{name} and reads the current code at /v1/authenticator/code/{name}. Only SHA-1 is supported.
+func (s *Server) serveAuthenticator(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/v1/authenticator/"), "/")
+	if len(parts) != 2 {
+		http.Error(w, `{"errors":["unsupported path"]}`, http.StatusNotFound)
+
+		return
+	}
+
+	kind, name := parts[0], parts[1]
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	switch {
+	case kind == "keys" && (r.Method == http.MethodPut || r.Method == http.MethodPost):
+		raw, err := io.ReadAll(r.Body)
+		if err != nil || !gjson.ValidBytes(raw) {
+			http.Error(w, `{"errors":["bad body"]}`, http.StatusBadRequest)
+
+			return
+		}
+
+		secret, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(gjson.GetBytes(raw, "key").String())
+		if err != nil || len(secret) == 0 {
+			http.Error(w, `{"errors":["bad key"]}`, http.StatusBadRequest)
+
+			return
+		}
+
+		if algorithm := gjson.GetBytes(raw, "algorithm").String(); algorithm != "" && algorithm != "SHA1" {
+			http.Error(w, `{"errors":["the stand-in supports SHA1 only"]}`, http.StatusBadRequest)
+
+			return
+		}
+
+		s.authenticators[name] = authenticatorKey{
+			secret: secret,
+			digits: int(gjson.GetBytes(raw, "digits").Int()),
+			period: uint(gjson.GetBytes(raw, "period").Uint()),
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	case kind == "keys" && r.Method == http.MethodDelete:
+		delete(s.authenticators, name)
+		w.WriteHeader(http.StatusNoContent)
+	case kind == "code" && r.Method == http.MethodGet:
+		record, ok := s.authenticators[name]
+		if !ok {
+			// The real engine answers a missing key with status 400.
+			http.Error(w, `{"errors":["unknown key: `+name+`"]}`, http.StatusBadRequest)
+
+			return
+		}
+
+		options := totp.Options{
+			Digits: record.digits,
+			Period: record.period,
+		}
+		code := options.Code(record.secret, options.Step(time.Now()))
+
+		w.Header().Set("Content-Type", "application/json")
+
+		if err := json.NewEncoder(w).Encode(envelope{Data: map[string]string{"code": code}}); err != nil {
+			http.Error(w, `{"errors":["encode failed"]}`, http.StatusInternalServerError)
+		}
+	default:
+		http.Error(w, `{"errors":["unsupported operation"]}`, http.StatusBadRequest)
+	}
 }

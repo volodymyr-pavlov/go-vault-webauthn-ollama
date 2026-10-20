@@ -24,9 +24,9 @@ type ConfirmationAction string
 
 // The actions that a confirmation can cover.
 const (
-	// ConfirmationActionDeleteAccount is the action of the deletion of an account. The challenge of the confirmation
+	// ConfirmationActionDeleteUser is the action of the deletion of a user. The challenge of the confirmation
 	// covers this name and the external ID of the user.
-	ConfirmationActionDeleteAccount ConfirmationAction = "delete_account"
+	ConfirmationActionDeleteUser ConfirmationAction = "delete_user"
 
 	// ConfirmationActionRemovePasskey is the action of the removal of a passkey. The challenge covers this name and the
 	// external ID of the passkey.
@@ -59,7 +59,7 @@ func (rp *RelyingParty) BeginConfirmation(user es.User, passkeys []es.Passkey, a
 
 	challenge := confirmationChallenge(nonce, action, target)
 
-	request, session, err := rp.web.BeginLogin(account{
+	request, session, err := rp.web.BeginLogin(webauthnUser{
 		handle:      user.Handle,
 		name:        user.Email,
 		credentials: credentialsOf(passkeys),

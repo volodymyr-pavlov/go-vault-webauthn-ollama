@@ -2,7 +2,7 @@ package es
 
 import "time"
 
-// RecoveryRequest is the request of a user who lost every factor and every recovery code to get back into the account.
+// RecoveryRequest is the request of a user who lost every factor and every recovery code to get back into the user.
 // An email alone never grants access. The request waits for a delay, during which the owner can cancel it, and then
 // needs the approval of an operator. The approved request yields one single-use grant that lets a session enroll a new
 // factor.

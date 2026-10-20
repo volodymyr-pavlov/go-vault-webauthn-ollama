@@ -6,9 +6,11 @@ type Event string
 
 // The security events. A request reports at most one.
 const (
-	EventAccountDeletionRefused   Event = "account_deletion_refused"
-	EventAccountExported          Event = "account_exported"
-	EventAccountDeleted           Event = "account_deleted"
+	EventAccountAdded             Event = "account_added"
+	EventAccountRemoved           Event = "account_removed"
+	EventUserDeleted              Event = "user_deleted"
+	EventUserDeletionRefused      Event = "user_deletion_refused"
+	EventUserExported             Event = "user_exported"
 	EventCounterRegression        Event = "counter_regression"
 	EventLogin                    Event = "login"
 	EventLoginDenied              Event = "login_denied"

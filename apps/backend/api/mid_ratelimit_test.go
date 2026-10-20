@@ -58,9 +58,9 @@ func TestRateLimitByAddress(t *testing.T) {
 		t.Fatalf("another address: %v", err)
 	}
 
-	account, err := limit.WriteOne(t.Context(), es.RateLimit{Key: "alice"}, es.WriteCreate)
-	if err != nil || account.Wait != 0 {
-		t.Fatalf("the first request of an account: %v, %v", account.Wait, err)
+	user, err := limit.WriteOne(t.Context(), es.RateLimit{Key: "alice"}, es.WriteCreate)
+	if err != nil || user.Wait != 0 {
+		t.Fatalf("the first request of a user: %v, %v", user.Wait, err)
 	}
 
 	if _, err := limit.WriteOne(t.Context(), es.RateLimit{Key: "alice"}, 0); !errors.Is(err, es.ErrNoArguments) {
@@ -68,16 +68,16 @@ func TestRateLimitByAddress(t *testing.T) {
 	}
 }
 
-func TestRateLimitByAccount(t *testing.T) {
+func TestRateLimitByUser(t *testing.T) {
 	server := miniredis.RunT(t)
 	limit := &RateLimit{
 		Limiter: redis_rate.NewLimiter(redis.NewClient(&redis.Options{
 			Addr: server.Addr(),
 		})),
-		Account: redis_rate.PerMinute(2),
+		User: redis_rate.PerMinute(2),
 	}
 	reached := 0
-	handler := limit.AccountMiddleware()(func(*fasthttp.RequestCtx) error {
+	handler := limit.UserMiddleware()(func(*fasthttp.RequestCtx) error {
 		reached++
 		return nil
 	})
@@ -103,7 +103,7 @@ func TestRateLimitByAccount(t *testing.T) {
 	}
 
 	if _, err := call(`{"email":"bob@example.com"}`); err != nil {
-		t.Fatalf("another account: %v", err)
+		t.Fatalf("another user: %v", err)
 	}
 
 	if _, err := call(`{"token":"abcd"}`); err != nil {

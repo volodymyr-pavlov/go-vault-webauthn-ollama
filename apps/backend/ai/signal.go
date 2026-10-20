@@ -25,7 +25,7 @@ const (
 	// [ImpossibleSpeedKmh].
 	SignalImpossibleTravel
 
-	// SignalSharedAddress is set when at least [SharedAddressAccounts] different accounts tried to log in from the
+	// SignalSharedAddress is set when at least [SharedAddressUsers] different users tried to log in from the
 	// address of the attempt within [SharedAddressWindow]. Credential stuffing from a small pool of addresses sets it,
 	// and so do an office, a hotel or a mobile carrier that share one address among many people. Because of the honest
 	// cases, its weight is low: alone it never moves a login to another level.
@@ -51,7 +51,7 @@ var signalWeights = [...]uint8{
 	10,
 }
 
-// The layout of a [Signals] value. The low bits hold the [Signal] set. Then come the failed attempts of the account or
+// The layout of a [Signals] value. The low bits hold the [Signal] set. Then come the failed attempts of the user or
 // the address, and the wrong TOTP codes. Both counts stop at the number that already gives the full weight, because
 // a larger number adds nothing to the score.
 const (
@@ -85,7 +85,7 @@ func (s Signals) With(signal Signal) Signals {
 	return s | Signals(signal)&signalMask
 }
 
-// FailedAttempts returns the failed attempts for the account or from the address within [FailureWindow]. The count
+// FailedAttempts returns the failed attempts for the user or from the address within [FailureWindow]. The count
 // stops at [MaxFailedAttempts].
 func (s Signals) FailedAttempts() uint8 {
 	return uint8((s & failedMask) >> failedShift)

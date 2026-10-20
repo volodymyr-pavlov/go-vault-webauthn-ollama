@@ -18,7 +18,7 @@ import (
 // Values of the label scope of the metric login_rate_limited_total.
 const (
 	ScopeAddress     = "address"
-	ScopeAccount     = "account"
+	ScopeUser        = "user"
 	ScopeGlobal      = "global"
 	ScopeSessionOpen = "session_open"
 )
@@ -98,7 +98,7 @@ func New() *Metrics {
 		}, []string{"outcome"}),
 		recovery: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "login_recovery_events_total",
-			Help: "The events of the account recovery flow.",
+			Help: "The events of the user recovery flow.",
 		}, []string{"event"}),
 		sessionEvents: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "login_session_events_total",
@@ -160,7 +160,7 @@ func (m *Metrics) RateLimited(scope string) {
 	}
 
 	switch scope {
-	case ScopeAddress, ScopeAccount, ScopeGlobal, ScopeSessionOpen:
+	case ScopeAddress, ScopeUser, ScopeGlobal, ScopeSessionOpen:
 	default:
 		scope = Unknown
 	}

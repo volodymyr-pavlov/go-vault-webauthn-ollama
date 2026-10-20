@@ -28,7 +28,7 @@ var codeHandlerBodyArgsPool web.Pool[CodeHandlerBodyArgs]
 const TOTPKey = "totp"
 
 // TOTPContext returns the Transit key context of the TOTP secret of the user with the external ID userXID. Encrypting
-// and decrypting under this context binds a ciphertext to its account.
+// and decrypting under this context binds a ciphertext to its user.
 func TOTPContext(userXID uint64) []byte {
 	context := make([]byte, 8)
 	binary.BigEndian.PutUint64(context, userXID)
@@ -43,11 +43,11 @@ type BeginEnrollTOTPHandlerResult struct {
 	URI    string `json:"uri"`
 }
 
-// BeginEnrollTOTPHandler handles POST /enroll/totp. It makes a secret for the account, stores it encrypted and shows it
+// BeginEnrollTOTPHandler handles POST /enroll/totp. It makes a secret for the user, stores it encrypted and shows it
 // once.
 //
-// The secret is not a factor until the first valid code confirms it. An account with a passkey cannot add a code
-// generator, and an account with a confirmed one cannot add a second.
+// The secret is not a factor until the first valid code confirms it. A user with a passkey cannot add a code
+// generator, and a user with a confirmed one cannot add a second.
 type BeginEnrollTOTPHandler struct {
 	UserWriter         es.Writer[es.User]
 	PasskeyBatchReader es.BatchReader[es.Passkey]
@@ -58,12 +58,12 @@ type BeginEnrollTOTPHandler struct {
 
 // ServeHTTP implements [web.Handler].
 //
-// It returns [ErrNoAccount] if the session is bound to no account. It returns [ErrAlreadyEnrolledTOTP] if the account
-// has a confirmed TOTP factor, and [ErrPasskeyAccount] if it has a passkey.
+// It returns [ErrSessionWithoutUser] if the session is bound to no user. It returns [ErrAlreadyEnrolledTOTP] if the user
+// has a confirmed TOTP factor, and [ErrPasskeyUser] if it has a passkey.
 func (h *BeginEnrollTOTPHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	user, err := User(ctx)
 	if err != nil {
-		return ErrNoAccount
+		return ErrSessionWithoutUser
 	}
 
 	if user.HasTOTP() {
@@ -79,7 +79,7 @@ func (h *BeginEnrollTOTPHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 
 	for _, p := range passkeys {
 		if p.Present() {
-			return ErrPasskeyAccount
+			return ErrPasskeyUser
 		}
 	}
 
@@ -149,16 +149,16 @@ func (a *CodeHandlerBodyArgs) Validate() error {
 // CompleteEnrollTOTPHandler handles POST /enroll/totp/complete. The first valid code confirms the secret, and the
 // secret becomes a factor. Enrolling does not log the session in: the user logs in with the password and a code.
 type CompleteEnrollTOTPHandler struct {
-	AccountGroupWriter es.Writer[es.AccountGroup]
-	TransitWriter      es.Writer[es.Transit]
-	Options            totp.Options
-	MessageWriter      es.Writer[es.Message]
-	SystemClock        clock.Clock
+	UserGroupWriter es.Writer[es.UserGroup]
+	TransitWriter   es.Writer[es.Transit]
+	Options         totp.Options
+	MessageWriter   es.Writer[es.Message]
+	SystemClock     clock.Clock
 }
 
 // ServeHTTP implements [web.Handler]. It responds with status 204.
 //
-// It returns [ErrNoAccount] if the session is bound to no account. It returns [ErrNoEnrolledTOTP] if the account has no
+// It returns [ErrSessionWithoutUser] if the session is bound to no user. It returns [ErrNoEnrolledTOTP] if the user has no
 // secret that waits for confirmation, and [ErrAuthenticationFailed] if the code is wrong.
 func (h *CompleteEnrollTOTPHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	bodyArgs := codeHandlerBodyArgsPool.Get()
@@ -174,7 +174,7 @@ func (h *CompleteEnrollTOTPHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 
 	user, err := User(ctx)
 	if err != nil {
-		return ErrNoAccount
+		return ErrSessionWithoutUser
 	}
 
 	if user.TOTPCiphertext == "" || user.HasTOTP() {
@@ -203,7 +203,7 @@ func (h *CompleteEnrollTOTPHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 		return ErrAuthenticationFailed
 	}
 
-	_, err = h.AccountGroupWriter.WriteOne(ctx, es.AccountGroup{
+	_, err = h.UserGroupWriter.WriteOne(ctx, es.UserGroup{
 		User: es.User{
 			ID:             user.ID,
 			TOTPCiphertext: user.TOTPCiphertext,
@@ -227,24 +227,24 @@ func (h *CompleteEnrollTOTPHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	return nil
 }
 
-// RemoveTOTPHandler handles DELETE /totp. It removes the TOTP factor of the account unless it is the last factor.
+// RemoveTOTPHandler handles DELETE /totp. It removes the TOTP factor of the user unless it is the last factor.
 // The writer locks the user row while it counts the factors.
 type RemoveTOTPHandler struct {
-	AccountGroupWriter es.Writer[es.AccountGroup]
-	MessageWriter      es.Writer[es.Message]
+	UserGroupWriter es.Writer[es.UserGroup]
+	MessageWriter   es.Writer[es.Message]
 }
 
 // ServeHTTP implements [web.Handler]. It responds with status 204.
 //
-// It returns [ErrNoAccount] if the session is bound to no account. It returns [ErrNoEnrolledTOTP] if the account has no
-// TOTP factor, and [ErrLastFactor] if the account has no usable passkey.
+// It returns [ErrSessionWithoutUser] if the session is bound to no user. It returns [ErrNoEnrolledTOTP] if the user has no
+// TOTP factor, and [ErrLastFactor] if the user has no usable passkey.
 func (h *RemoveTOTPHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	user, err := User(ctx)
 	if err != nil {
-		return ErrNoAccount
+		return ErrSessionWithoutUser
 	}
 
-	_, err = h.AccountGroupWriter.WriteOne(ctx, es.AccountGroup{
+	_, err = h.UserGroupWriter.WriteOne(ctx, es.UserGroup{
 		User: es.User{
 			ID: user.ID,
 		},

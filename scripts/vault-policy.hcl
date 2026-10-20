@@ -17,3 +17,13 @@ path "transit/hmac/mac" {
   capabilities = ["update"]
 }
 
+# The authenticator keeps the TOTP secrets of the accounts in the TOTP engine of Vault. The backend may create and delete
+# a key and read the code of a key. It may not read a key back, list the keys or change the engine: a secret never
+# leaves Vault.
+path "authenticator/keys/*" {
+  capabilities = ["create", "update", "delete"]
+}
+
+path "authenticator/code/*" {
+  capabilities = ["read"]
+}

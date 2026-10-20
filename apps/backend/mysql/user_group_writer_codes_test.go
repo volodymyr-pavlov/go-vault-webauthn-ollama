@@ -7,8 +7,8 @@ import (
 	"github.com/volodymyr-pavlov/go-vault-webauthn-ollama/apps/backend/es"
 )
 
-func newRecoveryCodeReissuer(f *enrollFakes) *AccountGroupWriter {
-	return &AccountGroupWriter{
+func newRecoveryCodeReissuer(f *enrollFakes) *UserGroupWriter {
+	return &UserGroupWriter{
 		Database:       newFakeDatabase(f.log),
 		UserTx:         f.user,
 		RecoveryCodeTx: f.code,
@@ -17,7 +17,7 @@ func newRecoveryCodeReissuer(f *enrollFakes) *AccountGroupWriter {
 
 func TestRecoveryCodeReissuer(t *testing.T) {
 	f := newEnrollFakes()
-	group := es.AccountGroup{
+	group := es.UserGroup{
 		Codes: []es.RecoveryCode{
 			{MAC: "a"},
 			{MAC: "b"},
@@ -46,7 +46,7 @@ func TestRecoveryCodeReissuerRollsBack(t *testing.T) {
 	f := newEnrollFakes()
 	f.failures["code.create"] = es.ErrDuplicate
 
-	group := es.AccountGroup{
+	group := es.UserGroup{
 		Codes: []es.RecoveryCode{
 			{MAC: "a"},
 			{MAC: "b"},

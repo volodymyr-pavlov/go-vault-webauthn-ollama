@@ -85,8 +85,8 @@ var messageKinds = []messageKind{
 		key: "login_refused",
 	},
 	{
-		op:  es.SendAccountDeleted,
-		key: "account_deleted",
+		op:  es.SendUserDeleted,
+		key: "user_deleted",
 	},
 }
 
@@ -97,7 +97,7 @@ type templateBody struct {
 	TTL   time.Duration
 }
 
-// Sender writes the messages about an account from the embedded templates and sends them by mail. It implements
+// Sender writes the messages about a user from the embedded templates and sends them by mail. It implements
 // [es.Writer] of [es.Message]. [NewSender] builds it.
 type Sender struct {
 	client    *Client

@@ -49,7 +49,7 @@ func SetUser(ctx *fasthttp.RequestCtx, user es.User) {
 
 // User returns the user that [SetUser] stored in the context of the request.
 //
-// It returns [ErrNoUser] if no user was stored. This is the case when the session is bound to no account.
+// It returns [ErrNoUser] if no user was stored. This is the case when the session is bound to no user.
 func User(ctx *fasthttp.RequestCtx) (es.User, error) {
 	user, ok := ctx.UserValue(keyUser).(es.User)
 	if !ok {

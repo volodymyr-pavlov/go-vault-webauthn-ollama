@@ -17,11 +17,11 @@ import (
 	"github.com/volodymyr-pavlov/go-vault-webauthn-ollama/apps/backend/es"
 )
 
-// TestAccountExportAndDeletionWithAPasskey proves the export of the personal data and the deletion of an account that
+// TestUserExportAndDeletionWithAPasskey proves the export of the personal data and the deletion of a user that
 // has a passkey: the export lists the email, the passkey, the sessions and the request log rows without a secret, the
 // deletion needs a passkey assertion for its own challenge, and afterwards no row names the user, no row of the user's
 // request log keeps an address or a user agent, and the user cannot log in.
-func TestAccountExportAndDeletionWithAPasskey(t *testing.T) {
+func TestUserExportAndDeletionWithAPasskey(t *testing.T) {
 	s := newStand(t)
 	email := fmt.Sprintf("erase-%d@example.com", time.Now().UnixNano())
 	authenticator := s.authenticator()
@@ -33,10 +33,10 @@ func TestAccountExportAndDeletionWithAPasskey(t *testing.T) {
 	var login api.AuthorizeResult
 	s.decode(s.loginPasskey(session.Handle, email, authenticator), &login)
 
-	var export api.ExportAccountHandlerResult
-	s.decode(s.call(http.MethodGet, "/v1/account/export", session.Handle, nil), &export)
+	var export api.ExportUserHandlerResult
+	s.decode(s.call(http.MethodGet, "/v1/user/export", session.Handle, nil), &export)
 	if export.Email != email || export.UserXID != userXID || len(export.Passkeys) != 1 || export.Passkeys[0].Name != "my key" {
-		t.Fatalf("the export must hold the account: %+v", export)
+		t.Fatalf("the export must hold the user: %+v", export)
 	}
 
 	if len(export.Sessions) == 0 || len(export.Requests) == 0 {
@@ -54,19 +54,19 @@ func TestAccountExportAndDeletionWithAPasskey(t *testing.T) {
 		}
 	}
 
-	// A confirmation without a begin is refused, and the account stays.
-	s.refuses(s.call(http.MethodPost, "/v1/account/deletion/confirm", session.Handle, map[string]any{
+	// A confirmation without a begin is refused, and the user stays.
+	s.refuses(s.call(http.MethodPost, "/v1/user/deletion/confirm", session.Handle, map[string]any{
 		"response": json.RawMessage(`{}`),
 	}), http.StatusUnauthorized, "AUTHENTICATION_FAILED")
 
-	begin := s.call(http.MethodPost, "/v1/account/deletion", session.Handle, nil)
+	begin := s.call(http.MethodPost, "/v1/user/deletion", session.Handle, nil)
 	if begin.Error != nil {
 		t.Fatalf("begin: %+v", begin.Error)
 	}
-	var started api.BeginDeleteAccountHandlerResult
+	var started api.BeginDeleteUserHandlerResult
 	s.decode(begin, &started)
 	if started.Method != api.DeleteMethodPasskey || len(started.Options) == 0 {
-		t.Fatalf("an account with a passkey confirms with it: %+v", started)
+		t.Fatalf("a user with a passkey confirms with it: %+v", started)
 	}
 
 	challenge, err := authtest.Challenge(started.Options)
@@ -87,7 +87,7 @@ func TestAccountExportAndDeletionWithAPasskey(t *testing.T) {
 	}), http.StatusUnauthorized, "AUTHENTICATION_FAILED")
 
 	// The refusal used the challenge up, so the deletion starts again.
-	s.decode(s.call(http.MethodPost, "/v1/account/deletion", session.Handle, nil), &started)
+	s.decode(s.call(http.MethodPost, "/v1/user/deletion", session.Handle, nil), &started)
 	challenge, err = authtest.Challenge(started.Options)
 	if err != nil {
 		t.Fatal(err)
@@ -97,7 +97,7 @@ func TestAccountExportAndDeletionWithAPasskey(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if a := s.call(http.MethodPost, "/v1/account/deletion/confirm", session.Handle, map[string]any{
+	if a := s.call(http.MethodPost, "/v1/user/deletion/confirm", session.Handle, map[string]any{
 		"response": json.RawMessage(response),
 	}); a.Status != http.StatusNoContent {
 		t.Fatalf("the confirmed deletion: %d %+v", a.Status, a.Error)
@@ -107,9 +107,9 @@ func TestAccountExportAndDeletionWithAPasskey(t *testing.T) {
 	s.refuses(s.loginPasskey(s.open().Handle, email, authenticator), http.StatusUnauthorized, "AUTHENTICATION_FAILED")
 }
 
-// TestAccountDeletionWithoutAPasskeyNeedsAFreshLogin proves that an account that has only a password and a code
+// TestUserDeletionWithoutAPasskeyNeedsAFreshLogin proves that a user that has only a password and a code
 // generator is deleted after a fresh login, and that a stale login is refused.
-func TestAccountDeletionWithoutAPasskeyNeedsAFreshLogin(t *testing.T) {
+func TestUserDeletionWithoutAPasskeyNeedsAFreshLogin(t *testing.T) {
 	s := newStand(t)
 	email := fmt.Sprintf("erase-totp-%d@example.com", time.Now().UnixNano())
 	session := s.open()
@@ -125,19 +125,19 @@ func TestAccountDeletionWithoutAPasskeyNeedsAFreshLogin(t *testing.T) {
 		t.Fatalf("login: %+v", result)
 	}
 
-	var started api.BeginDeleteAccountHandlerResult
-	s.decode(s.call(http.MethodPost, "/v1/account/deletion", login.Handle, nil), &started)
+	var started api.BeginDeleteUserHandlerResult
+	s.decode(s.call(http.MethodPost, "/v1/user/deletion", login.Handle, nil), &started)
 	if started.Method != api.DeleteMethodFreshLogin {
-		t.Fatalf("an account without a passkey confirms with the fresh login: %+v", started)
+		t.Fatalf("a user without a passkey confirms with the fresh login: %+v", started)
 	}
 
 	s.clock.Advance(6 * time.Minute)
-	s.refuses(s.call(http.MethodPost, "/v1/account/deletion/confirm", login.Handle, map[string]any{}), http.StatusUnauthorized, "STALE_AUTHENTICATION")
+	s.refuses(s.call(http.MethodPost, "/v1/user/deletion/confirm", login.Handle, map[string]any{}), http.StatusUnauthorized, "STALE_AUTHENTICATION")
 
 	again := s.open()
 	s.decode(s.loginPassword(again.Handle, email, testPassword), &next)
 	s.decode(s.loginTOTP(again.Handle, s.code(secret)), &result)
-	if a := s.call(http.MethodPost, "/v1/account/deletion/confirm", again.Handle, map[string]any{}); a.Status != http.StatusNoContent {
+	if a := s.call(http.MethodPost, "/v1/user/deletion/confirm", again.Handle, map[string]any{}); a.Status != http.StatusNoContent {
 		t.Fatalf("the deletion after a fresh login: %d %+v", a.Status, a.Error)
 	}
 
@@ -165,7 +165,7 @@ func (s *stand) assertErased(t *testing.T, userXID uint64, email string) {
 	var leaked int
 	err := s.env.Database.QueryRow(
 		"SELECT COUNT(*) FROM http_requests WHERE event = ? AND created_at > ? AND (ip IS NOT NULL OR user_agent <> '' OR user_xid <> 0 OR session_xid <> 0)",
-		es.EventAccountDeleted, s.clock.Now().Add(-time.Hour),
+		es.EventUserDeleted, s.clock.Now().Add(-time.Hour),
 	).Scan(&leaked)
 	if err != nil {
 		t.Fatal(err)
@@ -176,7 +176,7 @@ func (s *stand) assertErased(t *testing.T, userXID uint64, email string) {
 	}
 }
 
-// TestParallelConfirmationsWorkOnce proves that the confirmed deletion of an account and the confirmed removal of a
+// TestParallelConfirmationsWorkOnce proves that the confirmed deletion of a user and the confirmed removal of a
 // passkey run in one transaction each: if several requests send the same assertion at the same time, exactly one of
 // them succeeds.
 func TestParallelConfirmationsWorkOnce(t *testing.T) {
@@ -236,13 +236,13 @@ func TestParallelConfirmationsWorkOnce(t *testing.T) {
 		t.Fatalf("exactly one parallel removal must succeed, got %d", wins)
 	}
 
-	var started api.BeginDeleteAccountHandlerResult
-	s.decode(s.call(http.MethodPost, "/v1/account/deletion", session.Handle, nil), &started)
-	if wins := fire("/v1/account/deletion/confirm", assertion(started.Options)); wins != 1 {
+	var started api.BeginDeleteUserHandlerResult
+	s.decode(s.call(http.MethodPost, "/v1/user/deletion", session.Handle, nil), &started)
+	if wins := fire("/v1/user/deletion/confirm", assertion(started.Options)); wins != 1 {
 		t.Fatalf("exactly one parallel deletion must succeed, got %d", wins)
 	}
 
-	// A request that was in flight when the account went writes its log row after the erase, so only the user is checked
+	// A request that was in flight when the user went writes its log row after the erase, so only the user is checked
 	// here. The retention job deletes such rows.
 	var users int
 	if err := s.env.Database.QueryRow("SELECT COUNT(*) FROM users WHERE user_xid = ?", userXID).Scan(&users); err != nil {

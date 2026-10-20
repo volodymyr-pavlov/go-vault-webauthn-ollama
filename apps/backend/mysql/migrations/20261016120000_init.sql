@@ -39,6 +39,26 @@ CREATE TABLE passkeys
     CONSTRAINT passkeys_user FOREIGN KEY (user_id) REFERENCES users (id)
 );
 
+CREATE TABLE accounts
+(
+    id                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    account_xid BIGINT UNSIGNED NOT NULL,
+    flags             BIGINT UNSIGNED NOT NULL DEFAULT 0,
+    user_id           BIGINT UNSIGNED NOT NULL,
+    vault_key         VARCHAR(64)  NOT NULL,
+    issuer            VARCHAR(128) NOT NULL DEFAULT '',
+    label             VARCHAR(128) NOT NULL DEFAULT '',
+    algorithm         VARCHAR(8)   NOT NULL,
+    digits            TINYINT UNSIGNED NOT NULL,
+    period            INT UNSIGNED NOT NULL,
+    created_at        DATETIME(6) NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY accounts_account_xid (account_xid),
+    UNIQUE KEY accounts_vault_key (vault_key),
+    KEY               accounts_user_id (user_id, id),
+    CONSTRAINT accounts_user FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
 CREATE TABLE recovery_codes
 (
     id               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -134,5 +154,6 @@ CREATE TABLE http_requests
 DROP TABLE http_requests;
 DROP TABLE sessions;
 DROP TABLE recovery_codes;
+DROP TABLE accounts;
 DROP TABLE passkeys;
 DROP TABLE users;

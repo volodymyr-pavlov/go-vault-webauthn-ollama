@@ -10,7 +10,7 @@
 # The base images come only from scripts/versions.env, which has no copy here. The Makefile passes that file, and the
 # project .env after it when there is one, because compose skips .env once an --env-file is given.
 #
-# The initialization job, vault-init, enables Transit, makes the two keys, the policy and the AppRole, and leaves the
+# The initialization job, vault-init, enables Transit and the TOTP engine, makes the two keys, the policy and the AppRole, and leaves the
 # role ID and a wrapping token in the volume vault-handoff. The backend unwraps the token at startup, which uses it up.
 # Nothing secret is in this file: the dev root token and the MySQL password are in .env, which make stand-secrets
 # writes and git ignores.

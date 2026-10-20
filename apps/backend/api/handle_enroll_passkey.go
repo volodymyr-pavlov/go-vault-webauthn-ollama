@@ -31,7 +31,7 @@ const (
 	DefaultChallengeTTL = 2 * time.Minute
 )
 
-// BeginEnrollPasskeyHandler handles POST /enroll/passkey. It starts the passkey registration for the account of the
+// BeginEnrollPasskeyHandler handles POST /enroll/passkey. It starts the passkey registration for the user of the
 // session and keeps the challenge on the session. The response holds the creation options for the browser.
 type BeginEnrollPasskeyHandler struct {
 	PasskeyBatchReader es.BatchReader[es.Passkey]
@@ -45,7 +45,7 @@ type BeginEnrollPasskeyHandler struct {
 
 // ServeHTTP implements [web.Handler].
 //
-// It returns [ErrNoAccount] if the session is bound to no account.
+// It returns [ErrSessionWithoutUser] if the session is bound to no user.
 func (h *BeginEnrollPasskeyHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	session, err := Session(ctx)
 	if err != nil {
@@ -54,7 +54,7 @@ func (h *BeginEnrollPasskeyHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 
 	user, err := User(ctx)
 	if err != nil {
-		return ErrNoAccount
+		return ErrSessionWithoutUser
 	}
 
 	passkeys, err := h.PasskeyBatchReader.ReadAll(ctx, es.Passkey{
@@ -158,7 +158,7 @@ type CompleteEnrollPasskeyHandler struct {
 
 // ServeHTTP implements [web.Handler]. It responds with status 201.
 //
-// It returns [ErrNoAccount] if the session is bound to no account. It returns [ErrAuthenticationFailed] if the
+// It returns [ErrSessionWithoutUser] if the session is bound to no user. It returns [ErrAuthenticationFailed] if the
 // challenge is missing or expired, the response does not verify or the passkey exists already.
 func (h *CompleteEnrollPasskeyHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	bodyArgs := completeEnrollPasskeyHandlerBodyArgsPool.Get()
@@ -179,7 +179,7 @@ func (h *CompleteEnrollPasskeyHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error
 
 	user, err := User(ctx)
 	if err != nil {
-		return ErrNoAccount
+		return ErrSessionWithoutUser
 	}
 
 	if len(session.Challenge) == 0 || !h.SystemClock.Now().Before(session.ChallengeExpiresAt) {
@@ -252,18 +252,18 @@ type RetrievePasskeysHandlerResult struct {
 	Passkeys []PasskeyView `json:"passkeys"`
 }
 
-// RetrievePasskeysHandler handles GET /passkeys. It returns the passkeys of the account that are not removed.
+// RetrievePasskeysHandler handles GET /passkeys. It returns the passkeys of the user that are not removed.
 type RetrievePasskeysHandler struct {
 	PasskeyBatchReader es.BatchReader[es.Passkey]
 }
 
 // ServeHTTP implements [web.Handler].
 //
-// It returns [ErrNoAccount] if the session is bound to no account.
+// It returns [ErrSessionWithoutUser] if the session is bound to no user.
 func (h *RetrievePasskeysHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	user, err := User(ctx)
 	if err != nil {
-		return ErrNoAccount
+		return ErrSessionWithoutUser
 	}
 
 	passkeys, err := h.PasskeyBatchReader.ReadAll(ctx, es.Passkey{
@@ -302,7 +302,7 @@ var _ web.Handler = &RemovePasskeyHandler{}
 // needs a fresh passkey assertion. The response holds the request options for the browser. Their challenge is bound to
 // the action and to the passkey, and the session keeps the state of the ceremony.
 //
-// The assertion may come from any usable passkey of the account, not only from the one that goes away.
+// The assertion may come from any usable passkey of the user, not only from the one that goes away.
 type BeginRemovePasskeyHandler struct {
 	PasskeyReader      es.Reader[es.Passkey]
 	PasskeyBatchReader es.BatchReader[es.Passkey]
@@ -318,8 +318,8 @@ type BeginRemovePasskeyHandler struct {
 
 // ServeHTTP implements [web.Handler]. It responds with the request options for the browser.
 //
-// It returns [ErrNoParamPasskeyXID] if the path has no passkey ID and [ErrNoAccount] if the session is bound to no
-// account. It returns [ErrNotFoundPasskey] if the account has no such passkey.
+// It returns [ErrNoParamPasskeyXID] if the path has no passkey ID and [ErrSessionWithoutUser] if the session is bound to no
+// user. It returns [ErrNotFoundPasskey] if the user has no such passkey.
 func (h *BeginRemovePasskeyHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	passkeyXID := web.ParamUint[uint64](ctx, "passkey_xid")
 	if passkeyXID == 0 {
@@ -328,7 +328,7 @@ func (h *BeginRemovePasskeyHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 
 	user, err := User(ctx)
 	if err != nil {
-		return ErrNoAccount
+		return ErrSessionWithoutUser
 	}
 
 	session, err := Session(ctx)
@@ -389,15 +389,15 @@ type RemovePasskeyHandler struct {
 	PasskeyBatchReader es.BatchReader[es.Passkey]
 	RelyingParty       *auth.RelyingParty
 	SystemClock        clock.Clock
-	AccountGroupWriter es.Writer[es.AccountGroup]
+	UserGroupWriter    es.Writer[es.UserGroup]
 	SessionGroupWriter es.Writer[es.SessionGroup]
 	MessageWriter      es.Writer[es.Message]
 }
 
 // ServeHTTP implements [web.Handler]. It responds with status 204.
 //
-// It returns [ErrNoParamPasskeyXID] if the path has no passkey ID and [ErrNoAccount] if the session is bound to no
-// account. It returns [ErrNotFoundPasskey] if the account has no such passkey. It returns [ErrAuthenticationFailed] if
+// It returns [ErrNoParamPasskeyXID] if the path has no passkey ID and [ErrSessionWithoutUser] if the session is bound to no
+// user. It returns [ErrNotFoundPasskey] if the user has no such passkey. It returns [ErrAuthenticationFailed] if
 // the session holds no confirmation challenge, if the challenge expired or was bound to another action or passkey, or
 // if the assertion does not verify. It returns [ErrLastFactor] if the passkey is the last factor.
 func (h *RemovePasskeyHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
@@ -419,7 +419,7 @@ func (h *RemovePasskeyHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 
 	user, err := User(ctx)
 	if err != nil {
-		return ErrNoAccount
+		return ErrSessionWithoutUser
 	}
 
 	session, err := Session(ctx)
@@ -457,7 +457,7 @@ func (h *RemovePasskeyHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	}
 
 	// The writer uses up the challenge in the same transaction and finds none for a second response to it.
-	_, err = h.AccountGroupWriter.WriteOne(ctx, es.AccountGroup{
+	_, err = h.UserGroupWriter.WriteOne(ctx, es.UserGroup{
 		User: es.User{
 			ID: user.ID,
 		},

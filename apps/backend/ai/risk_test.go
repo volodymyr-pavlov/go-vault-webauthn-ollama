@@ -174,7 +174,7 @@ func TestHostileOutputCannotLowerRisk(t *testing.T) {
 }
 
 func TestParseAdviceAcceptsSharedAddress(t *testing.T) {
-	advice, err := ParseAdvice([]byte(`{"risk_level":"medium","reasons":["shared_address"],"summary":"Many accounts from one address."}`))
+	advice, err := ParseAdvice([]byte(`{"risk_level":"medium","reasons":["shared_address"],"summary":"Many users from one address."}`))
 	if err != nil {
 		t.Fatal(err)
 	}

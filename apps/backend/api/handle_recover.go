@@ -30,7 +30,7 @@ var tokenBodyArgsPool web.Pool[TokenBodyArgs]
 
 const (
 	// DefaultRecoveryDelay is how long a recovery request waits before an operator can approve it. During this time the
-	// owner of the account can cancel the request.
+	// owner of the user can cancel the request.
 	DefaultRecoveryDelay = 72 * time.Hour
 
 	// RecoveryGrantTTL is how long the grant token of an approved recovery works.
@@ -116,18 +116,18 @@ func (a *TokenBodyArgs) Validate() error {
 	return nil
 }
 
-// RecoveryStatusResult is the response of the recovery endpoints that do not reveal whether the account exists. It
+// RecoveryStatusResult is the response of the recovery endpoints that do not reveal whether the user exists. It
 // depends only on the session, so it is the same for a known and an unknown address.
 type RecoveryStatusResult struct {
 	// Flags are the flag bits of the session, which these endpoints leave as they are.
 	Flags es.SessionFlag `json:"flags"`
 }
 
-// RequestRecoveryHandler handles POST /recover/request. It starts the recovery of an account whose owner lost every
+// RequestRecoveryHandler handles POST /recover/request. It starts the recovery of a user whose owner lost every
 // factor and every recovery code. An email alone never grants access, so the request only starts a delay. The handler
 // tells the owner by email and gives a cancel token.
 //
-// An unknown email, an account that cannot authenticate and an account with a request that is open already get the
+// An unknown email, a user that cannot authenticate and a user with a request that is open already get the
 // same response as a new request. The response does not show which case it is.
 type RequestRecoveryHandler struct {
 	UserReader               es.Reader[es.User]
@@ -375,8 +375,8 @@ func (h *ClaimRecoveryHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	})
 }
 
-// GrantRecoveryHandler handles POST /recover/grant. An unused grant token binds the session to the account and revokes
-// every other session of the account. The session may then enroll a factor and do nothing else, as after a recovery
+// GrantRecoveryHandler handles POST /recover/grant. An unused grant token binds the session to the user and revokes
+// every other session of the user. The session may then enroll a factor and do nothing else, as after a recovery
 // code. The handler uses the grant up, writes a security event and notifies the user.
 type GrantRecoveryHandler struct {
 	RecoveryRequestReader es.Reader[es.RecoveryRequest]
@@ -434,8 +434,8 @@ func (h *GrantRecoveryHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 		return fmt.Errorf("read the user: %w", err)
 	}
 
-	// The write revokes the other sessions of the account before it binds this one, and it uses the grant up last. The
-	// current session has no account yet, so it is not among the sessions that the write revokes.
+	// The write revokes the other sessions of the user before it binds this one, and it uses the grant up last. The
+	// current session has no user yet, so it is not among the sessions that the write revokes.
 	_, err = h.RecoveryGroupWriter.WriteOne(ctx, es.RecoveryGroup{
 		Request: es.RecoveryRequest{
 			GrantHash: grantHash[:],

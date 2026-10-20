@@ -23,7 +23,7 @@ type Session struct {
 	// Flags holds the state of the session. See [SessionFlag].
 	Flags SessionFlag
 
-	// UserID is the ID of the account of the session. It is zero until a step binds the session to an account: a
+	// UserID is the ID of the user of the session. It is zero until a step binds the session to a user: a
 	// verified registration, an accepted password, an accepted passkey or an accepted recovery code.
 	UserID uint64
 

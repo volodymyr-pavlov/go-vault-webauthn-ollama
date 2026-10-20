@@ -256,32 +256,32 @@ var DeleteExpiredHTTPRequests string
 //go:embed create_http_request.sql
 var CreateHTTPRequest string
 
-// DeleteUserRecoveryRequests deletes the recovery requests of a user. AccountGroupWriter runs it when it deletes an account.
+// DeleteUserRecoveryRequests deletes the recovery requests of a user. UserGroupWriter runs it when it deletes a user.
 //
 //go:embed delete_user_recovery_requests.sql
 var DeleteUserRecoveryRequests string
 
-// DeleteUserRecoveryCodes deletes the recovery codes of a user. AccountGroupWriter runs it when it deletes an account.
+// DeleteUserRecoveryCodes deletes the recovery codes of a user. UserGroupWriter runs it when it deletes a user.
 //
 //go:embed delete_user_recovery_codes.sql
 var DeleteUserRecoveryCodes string
 
-// DeleteUserPasskeys deletes the passkeys of a user. AccountGroupWriter runs it when it deletes an account.
+// DeleteUserPasskeys deletes the passkeys of a user. UserGroupWriter runs it when it deletes a user.
 //
 //go:embed delete_user_passkeys.sql
 var DeleteUserPasskeys string
 
-// DeleteUserSessions deletes the sessions of a user. AccountGroupWriter runs it when it deletes an account.
+// DeleteUserSessions deletes the sessions of a user. UserGroupWriter runs it when it deletes a user.
 //
 //go:embed delete_user_sessions.sql
 var DeleteUserSessions string
 
-// DeleteUser deletes a user by its internal key. AccountGroupWriter runs it when it deletes an account.
+// DeleteUser deletes a user by its internal key. UserGroupWriter runs it when it deletes a user.
 //
 //go:embed delete_user.sql
 var DeleteUser string
 
-// EraseUserHTTPRequests removes the user, the address, the user agent and the texts from the request log rows of a user. AccountGroupWriter runs it when it deletes an account.
+// EraseUserHTTPRequests removes the user, the address, the user agent and the texts from the request log rows of a user. UserGroupWriter runs it when it deletes a user.
 //
 //go:embed erase_user_http_requests.sql
 var EraseUserHTTPRequests string
@@ -290,3 +290,33 @@ var EraseUserHTTPRequests string
 //
 //go:embed http_requests_by_user.sql
 var HTTPRequestsByUser string
+
+// CreateAccount inserts one account. AccountGroupWriter runs it.
+//
+//go:embed create_account.sql
+var CreateAccount string
+
+// AccountsByUser selects one page of the accounts of a user, oldest first. AccountBatchReader runs it.
+//
+//go:embed accounts_by_user.sql
+var AccountsByUser string
+
+// AccountByXID selects the account of a user with an external ID. AccountReader runs it.
+//
+//go:embed account_by_xid.sql
+var AccountByXID string
+
+// CountAccountsByUser counts the accounts of a user. AccountGroupWriter runs it after it has locked the user.
+//
+//go:embed count_accounts_by_user.sql
+var CountAccountsByUser string
+
+// DeleteAccount deletes the account of a user with an external ID. AccountGroupWriter runs it.
+//
+//go:embed delete_account.sql
+var DeleteAccount string
+
+// DeleteUserAccounts deletes the accounts of a user. UserGroupWriter runs it when it deletes a user.
+//
+//go:embed delete_user_accounts.sql
+var DeleteUserAccounts string

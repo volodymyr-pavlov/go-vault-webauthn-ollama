@@ -474,17 +474,17 @@ func TestFaultParallelLogins(t *testing.T) {
 	}
 	stamp := time.Now().UnixNano()
 
-	type account struct {
+	type person struct {
 		email         string
 		authenticator *authtest.Authenticator
 		session       device
 		xid           uint64
 	}
 
-	accounts := make([]account, users)
+	people := make([]person, users)
 	// Each user sets up in a new minute of the Redis clock, so the setup stays inside the budget of the rate limiter.
 	base := time.Now()
-	for i := range accounts {
+	for i := range people {
 		s.redis.SetTime(base.Add(time.Duration(i) * time.Minute))
 
 		email := fmt.Sprintf("parallel-%d-%d@example.com", stamp, i)
@@ -495,7 +495,7 @@ func TestFaultParallelLogins(t *testing.T) {
 			t.Fatalf("enroll: %+v", a.Error)
 		}
 
-		accounts[i] = account{
+		people[i] = person{
 			email:         email,
 			authenticator: authenticator,
 			session:       s.open(),
@@ -509,7 +509,7 @@ func TestFaultParallelLogins(t *testing.T) {
 
 	var wg sync.WaitGroup
 	start := make(chan struct{})
-	for _, a := range accounts {
+	for _, a := range people {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

@@ -79,8 +79,8 @@ func (m *RequestLog) Middleware(code es.ResourceCode) web.Middleware {
 			user, _ := User(ctx)
 
 			eventName, eventText := requestEvent(ctx)
-			if eventName == es.EventAccountDeleted {
-				// The account is gone, so the row of this request must not name the user, the session, the address or the
+			if eventName == es.EventUserDeleted {
+				// The user is gone, so the row of this request must not name the user, the session, the address or the
 				// user agent.
 				session = es.Session{}
 				user = es.User{}
@@ -166,7 +166,7 @@ func logAddress(address netip.Addr) string {
 	return prefix.String()
 }
 
-// exportAddress returns the address for the export of an account. It returns an empty text for an unknown address.
+// exportAddress returns the address for the export of a user. It returns an empty text for an unknown address.
 func exportAddress(address netip.Addr) string {
 	if !address.IsValid() {
 		return ""

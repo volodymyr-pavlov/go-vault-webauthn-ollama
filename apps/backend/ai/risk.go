@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	// FailureWindow is the period before an attempt in which failed attempts of the account or of the address count.
+	// FailureWindow is the period before an attempt in which failed attempts of the user or of the address count.
 	FailureWindow = 10 * time.Minute
 
 	// RecentCredential is the period after the enrollment of a factor in which the factor counts as new.
@@ -19,11 +19,11 @@ const (
 	// travel.
 	ImpossibleSpeedKmh = 1000
 
-	// SharedAddressAccounts is the number of different accounts that must have tried to log in from one address within
+	// SharedAddressUsers is the number of different users that must have tried to log in from one address within
 	// [SharedAddressWindow] for the address to count as shared.
-	SharedAddressAccounts = 5
+	SharedAddressUsers = 5
 
-	// SharedAddressWindow is the period before an attempt in which the accounts that tried to log in from the address
+	// SharedAddressWindow is the period before an attempt in which the users that tried to log in from the address
 	// are counted.
 	SharedAddressWindow = time.Hour
 

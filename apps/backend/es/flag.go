@@ -110,8 +110,18 @@ const (
 	// rows in its ID.
 	PurgeHTTPRequests
 
-	// SendAccountDeleted makes a create of a [Message] tell the owner that the account was deleted.
-	SendAccountDeleted
+	// AddAccounts makes a write of an [AccountGroup] store new accounts in the authenticator, unless the user
+	// would have more than [MaxAccounts].
+	AddAccounts
+
+	// RemoveAccount makes a write of an [AccountGroup] delete one account of the user.
+	RemoveAccount
+
+	// DeleteAuthenticatorKey makes a write of an [AuthenticatorKey] delete the key from the TOTP engine of Vault.
+	DeleteAuthenticatorKey
+
+	// SendUserDeleted makes a create of a [Message] tell the owner that the user was deleted.
+	SendUserDeleted
 
 	// SendRegistryToken makes a create of a [Message] send the verification token that finishes a registration.
 	SendRegistryToken
@@ -142,7 +152,7 @@ const (
 	// SendRecoveryUsed makes a create of a [Message] tell the owner that a recovery code was used.
 	SendRecoveryUsed
 
-	// SendRecoveryRequested makes a create of a message tell the owner that someone asked to recover the account. It
+	// SendRecoveryRequested makes a create of a message tell the owner that someone asked to recover the user. It
 	// carries the cancel token in Token and the delay in TTL.
 	SendRecoveryRequested
 
@@ -171,14 +181,14 @@ const (
 	// the value.
 	HashTheValue
 
-	// OpenRegistry makes a write of a [SessionGroup] create the account of a registration, bind the session to it and
+	// OpenRegistry makes a write of a [SessionGroup] create the user of a registration, bind the session to it and
 	OpenRegistry
 
 	// OpenTakenRegistry makes a write of a [SessionGroup] set the registration flags and the verification token hash
-	// on the session of a registration whose email is taken. It creates no account.
+	// on the session of a registration whose email is taken. It creates no user.
 	OpenTakenRegistry
 
-	// VerifyRegistry makes a write of a [SessionGroup] mark the account of a registration as verified, mark the session
+	// VerifyRegistry makes a write of a [SessionGroup] mark the user of a registration as verified, mark the session
 	// as verified and clear its verification token, so the token works once.
 	VerifyRegistry
 
@@ -219,40 +229,40 @@ const (
 	// they are.
 	DenyLogin
 
-	// ApprovePassword makes a write of a [SessionGroup] bind the session to the account after an accepted password and
+	// ApprovePassword makes a write of a [SessionGroup] bind the session to the user after an accepted password and
 	// clear the earlier attempt.
 	ApprovePassword
 
-	// ApproveRecoveryCode makes a write of a [SessionGroup] bind the session to the account after an accepted recovery
+	// ApproveRecoveryCode makes a write of a [SessionGroup] bind the session to the user after an accepted recovery
 	// code, use the code up and end the open recovery requests of the user, because a recovery code shows that the owner
 	// is in control.
 	ApproveRecoveryCode
 
-	// RemovePasskey makes a write of an [AccountGroup] mark a passkey as removed, unless it is the last factor of the
-	// account.
+	// RemovePasskey makes a write of an [UserGroup] mark a passkey as removed, unless it is the last factor of the
+	// user.
 	RemovePasskey
 
-	// ConfirmTOTP makes a write of an [AccountGroup] mark the TOTP secret of the user as confirmed and store the step of
+	// ConfirmTOTP makes a write of an [UserGroup] mark the TOTP secret of the user as confirmed and store the step of
 	// the accepted code.
 	ConfirmTOTP
 
-	// RemoveTOTP makes a write of an [AccountGroup] delete the TOTP secret of the user, unless it is the last factor of
-	// the account.
+	// RemoveTOTP makes a write of an [UserGroup] delete the TOTP secret of the user, unless it is the last factor of
+	// the user.
 	RemoveTOTP
 
-	// ReissueRecoveryCodes makes a write of an [AccountGroup] retire the earlier recovery codes of the user and store a
+	// ReissueRecoveryCodes makes a write of an [UserGroup] retire the earlier recovery codes of the user and store a
 	// new set.
 	ReissueRecoveryCodes
 
-	// DeleteAccount makes a write of an [AccountGroup] delete the user, with its passkeys, recovery codes, recovery
+	// DeleteUser makes a write of an [UserGroup] delete the user, with its passkeys, recovery codes, recovery
 	// requests and sessions, and remove the identity from the rows of the request log of the user.
-	DeleteAccount
+	DeleteUser
 
 	// OpenRecoveryRequest makes a write of a [RecoveryGroup] store a new recovery request.
 	OpenRecoveryRequest
 
 	// RedeemRecoveryGrant makes a write of a [RecoveryGroup] use up the grant of an approved request, revoke the other
-	// sessions of the user and bind the current session to the account.
+	// sessions of the user and bind the current session to the user.
 	RedeemRecoveryGrant
 )
 
@@ -261,8 +271,11 @@ const SessionIntents = OpenRegistry | OpenTakenRegistry | VerifyRegistry | Revok
 	OpenConfirmation | EnrollPasskey | RefusePasskeyEnrollment | OpenPasskeyLogin | RefuseLogin | AuthorizeLogin | DenyLogin |
 	ApprovePassword | ApproveRecoveryCode
 
+// UserIntents groups the intents that an [UserGroup] write accepts. A write sets exactly one of them.
+const UserIntents = RemovePasskey | ConfirmTOTP | RemoveTOTP | ReissueRecoveryCodes | DeleteUser
+
 // AccountIntents groups the intents that an [AccountGroup] write accepts. A write sets exactly one of them.
-const AccountIntents = RemovePasskey | ConfirmTOTP | RemoveTOTP | ReissueRecoveryCodes | DeleteAccount
+const AccountIntents = AddAccounts | RemoveAccount
 
 // RecoveryIntents groups the intents that a [RecoveryGroup] write accepts. A write sets exactly one of them.
 const RecoveryIntents = OpenRecoveryRequest | CancelRecoveryRequest | IssueRecoveryGrant | RedeemRecoveryGrant
@@ -272,16 +285,20 @@ type UserFlag uint64
 
 const (
 	// UserFlagVerified is set when the service accepts the verification token of the registration. Until then the
-	// account cannot authenticate or enroll a factor.
+	// user cannot authenticate or enroll a factor.
 	UserFlagVerified UserFlag = 1 << iota
 
 	// UserFlagTOTPConfirmed is set when the service accepts the first valid code of the enrolled TOTP secret. Until
 	// then the secret is stored but is not a factor.
 	UserFlagTOTPConfirmed
 
-	// UserFlagDisabled is set by an operator. A disabled account cannot authenticate.
+	// UserFlagDisabled is set by an operator. A disabled user cannot authenticate.
 	UserFlagDisabled
 )
+
+// AccountFlag is a bit of [Authenticator.Flags]. It has no bits yet, and the column exists so that a state can be
+// added without a migration.
+type AccountFlag uint64
 
 // PasskeyFlag is a bit of [Passkey.Flags]. Some bits copy the flags of the authenticator data. The others are the
 // state that the service gives to the credential.
@@ -326,15 +343,15 @@ const (
 	// SessionFlagStarted means the session is open for a device. Every other step needs it.
 	SessionFlagStarted
 
-	// SessionFlagRegistryBegun means the session asked to register an account. The flag is set both if the account is
+	// SessionFlagRegistryBegun means the session asked to register a user. The flag is set both if the user is
 	// new and if the email is taken, so that the response does not show which case it is.
 	SessionFlagRegistryBegun
 
 	// SessionFlagRegistryVerified means the service accepted the verification token of the registration and bound the
-	// session to the new account. The account has no factor yet and may enroll one.
+	// session to the new user. The user has no factor yet and may enroll one.
 	SessionFlagRegistryVerified
 
-	// SessionFlagPasswordApproved means the service accepted the password of an account without a passkey. The TOTP
+	// SessionFlagPasswordApproved means the service accepted the password of a user without a passkey. The TOTP
 	// code is the next step.
 	SessionFlagPasswordApproved
 
@@ -344,7 +361,7 @@ const (
 	// SessionFlagPasskeyApproved means the service accepted a passkey assertion.
 	SessionFlagPasskeyApproved
 
-	// SessionFlagRecoveryApproved means the service accepted a recovery code. The session is bound to the account and
+	// SessionFlagRecoveryApproved means the service accepted a recovery code. The session is bound to the user and
 	// may enroll a factor, but may do nothing else.
 	SessionFlagRecoveryApproved
 
@@ -364,7 +381,7 @@ const (
 	SessionFlagChallengeRegistration
 	SessionFlagChallengeLogin
 
-	// SessionFlagChallengeDiscoverable means the login challenge names no account. The passkey names the account in
+	// SessionFlagChallengeDiscoverable means the login challenge names no user. The passkey names the user in
 	// its response. It is set together with [SessionFlagChallengeLogin].
 	SessionFlagChallengeDiscoverable
 

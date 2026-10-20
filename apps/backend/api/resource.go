@@ -31,9 +31,12 @@ const (
 	ListSessions
 	RemoveSession
 	BeginRemovePasskey
-	BeginDeleteAccount
-	DeleteAccount
-	ExportAccount
+	BeginDeleteUser
+	DeleteUser
+	ExportUser
+	AddAccount
+	ListAccounts
+	RemoveAccount
 )
 
 // CodeToPermission maps the code of each endpoint that needs a session to the permission the session must have.
@@ -116,18 +119,32 @@ var CodeToPermission = map[es.ResourceCode]es.Permission{
 		SessionFlag:  es.SessionFlagStarted | es.SessionFlagAuthorized,
 		Rules:        es.RuleFresh,
 	},
-	BeginDeleteAccount: {
-		ResourceCode: BeginDeleteAccount,
+	BeginDeleteUser: {
+		ResourceCode: BeginDeleteUser,
 		SessionFlag:  es.SessionFlagStarted | es.SessionFlagAuthorized,
 		Rules:        es.RuleFresh,
 	},
-	DeleteAccount: {
-		ResourceCode: DeleteAccount,
+	DeleteUser: {
+		ResourceCode: DeleteUser,
 		SessionFlag:  es.SessionFlagStarted | es.SessionFlagAuthorized,
 		Rules:        es.RuleFresh,
 	},
-	ExportAccount: {
-		ResourceCode: ExportAccount,
+	ExportUser: {
+		ResourceCode: ExportUser,
+		SessionFlag:  es.SessionFlagStarted | es.SessionFlagAuthorized,
+		Rules:        es.RuleFresh,
+	},
+	AddAccount: {
+		ResourceCode: AddAccount,
+		SessionFlag:  es.SessionFlagStarted | es.SessionFlagAuthorized,
+		Rules:        es.RuleFresh,
+	},
+	ListAccounts: {
+		ResourceCode: ListAccounts,
+		SessionFlag:  es.SessionFlagStarted | es.SessionFlagAuthorized,
+	},
+	RemoveAccount: {
+		ResourceCode: RemoveAccount,
 		SessionFlag:  es.SessionFlagStarted | es.SessionFlagAuthorized,
 		Rules:        es.RuleFresh,
 	},

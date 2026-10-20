@@ -202,7 +202,7 @@ func (s *SessionGroupWriter) refusePasskeyEnrollment(tx *sql.Tx, group es.Sessio
 
 // openPasskeyLogin starts a new login attempt on the session of the group and saves its challenge. A new attempt starts
 // clean: it clears the bits of the earlier factors, the earlier outcome and the earlier challenge, sets the bits of
-// group.Session, and replaces the account of the earlier attempt by the account of this one, if there is one.
+// group.Session, and replaces the user of the earlier attempt by the user of this one, if there is one.
 //
 // The lock order is the session. It returns [es.ErrNoUpdatedRows] if the session is missing.
 func (s *SessionGroupWriter) openPasskeyLogin(tx *sql.Tx, group es.SessionGroup) (es.SessionGroup, error) {
@@ -283,7 +283,7 @@ func (s *SessionGroupWriter) refuseLogin(tx *sql.Tx, group es.SessionGroup, op e
 // the session, ends the open recovery requests of the user. It skips the user and the
 // passkey whose ID is zero.
 //
-// The session update adds the flags of group.Session, binds the account, and stores the time of the factor, the risk
+// The session update adds the flags of group.Session, binds the user, and stores the time of the factor, the risk
 // score and a zero failure count. A login with a factor shows that the owner is in control, so the recovery requests of
 // the UserID of the session end. A user without an open request is not an error.
 //
@@ -353,7 +353,7 @@ func (s *SessionGroupWriter) approvePassword(tx *sql.Tx, group es.SessionGroup) 
 	return group, nil
 }
 
-// approveRecoveryCode binds the session to the account after an accepted recovery code. In this order it replaces the
+// approveRecoveryCode binds the session to the user after an accepted recovery code. In this order it replaces the
 // factor and authorization bits of the session by the bits of group.Session, stores its UserID, uses up the code
 // group.RecoveryCode, ends the open recovery requests of the user. A recovery code shows that
 // the owner is in control, so the requests end.

@@ -12,7 +12,7 @@ import (
 	"github.com/volodymyr-pavlov/go-vault-webauthn-ollama/apps/backend/es"
 )
 
-var _ webauthn.User = account{}
+var _ webauthn.User = webauthnUser{}
 
 // DefaultTimeout is how long a ceremony may take when [RelyingPartyOptions.Timeout] is zero.
 const DefaultTimeout = 2 * time.Minute
@@ -78,30 +78,30 @@ func NewRelyingParty(opts RelyingPartyOptions) (*RelyingParty, error) {
 	}, nil
 }
 
-// account is a user as the library sees it: the opaque handle, the email as the name, and the credentials.
-type account struct {
+// webauthnUser is a user as the library sees it: the opaque handle, the email as the name, and the credentials.
+type webauthnUser struct {
 	handle      []byte
 	name        string
 	credentials []webauthn.Credential
 }
 
 // WebAuthnID returns the handle of the user. It implements [webauthn.User].
-func (a account) WebAuthnID() []byte {
+func (a webauthnUser) WebAuthnID() []byte {
 	return a.handle
 }
 
 // WebAuthnName returns the name of the user. It implements [webauthn.User].
-func (a account) WebAuthnName() string {
+func (a webauthnUser) WebAuthnName() string {
 	return a.name
 }
 
-// WebAuthnDisplayName returns the same value as [account.WebAuthnName]. It implements [webauthn.User].
-func (a account) WebAuthnDisplayName() string {
+// WebAuthnDisplayName returns the same value as [webauthnUser.WebAuthnName]. It implements [webauthn.User].
+func (a webauthnUser) WebAuthnDisplayName() string {
 	return a.name
 }
 
 // WebAuthnCredentials returns the credentials of the user. It implements [webauthn.User].
-func (a account) WebAuthnCredentials() []webauthn.Credential {
+func (a webauthnUser) WebAuthnCredentials() []webauthn.Credential {
 	return a.credentials
 }
 
@@ -128,7 +128,7 @@ func (rp *RelyingParty) BeginRegistration(user es.User, passkeys []es.Passkey) (
 		exclusions = append(exclusions, descriptor)
 	}
 
-	creation, session, err := rp.web.BeginRegistration(account{
+	creation, session, err := rp.web.BeginRegistration(webauthnUser{
 		handle: user.Handle,
 		name:   user.Email,
 	}, webauthn.WithExclusions(exclusions))
@@ -166,7 +166,7 @@ func (rp *RelyingParty) FinishRegistration(user es.User, state, response []byte)
 		return es.Passkey{}, errors.Join(ErrVerify, err)
 	}
 
-	credential, err := rp.web.CreateCredential(account{
+	credential, err := rp.web.CreateCredential(webauthnUser{
 		handle: user.Handle,
 		name:   user.Email,
 	}, session, parsed)
@@ -212,11 +212,11 @@ func (rp *RelyingParty) FinishRegistration(user es.User, state, response []byte)
 	}, nil
 }
 
-// BeginLogin starts a login for the account with the given handle. It returns the options for the browser, which name
+// BeginLogin starts a login for the user with the given handle. It returns the options for the browser, which name
 // the credentials in credentialIDs. It also returns the encoded state of the ceremony for the caller to keep on the
 // session.
 //
-// For an unknown account, the caller passes fixed stand-in values, so the options do not show whether the account
+// For an unknown user, the caller passes fixed stand-in values, so the options do not show whether the user
 // exists.
 func (rp *RelyingParty) BeginLogin(handle []byte, credentialIDs [][]byte) (options, state []byte, err error) {
 	credentials := make([]webauthn.Credential, 0, len(credentialIDs))
@@ -230,7 +230,7 @@ func (rp *RelyingParty) BeginLogin(handle []byte, credentialIDs [][]byte) (optio
 		})
 	}
 
-	request, session, err := rp.web.BeginLogin(account{
+	request, session, err := rp.web.BeginLogin(webauthnUser{
 		handle:      handle,
 		credentials: credentials,
 	}, webauthn.WithUserVerification(protocol.VerificationRequired))
@@ -252,10 +252,10 @@ func (rp *RelyingParty) BeginLogin(handle []byte, credentialIDs [][]byte) (optio
 }
 
 // BeginDiscoverableLogin starts a login with a passkey that the browser finds by itself, without the address of an
-// account. It returns the options for the browser and the encoded state of the ceremony for the caller to keep on the
+// user. It returns the options for the browser and the encoded state of the ceremony for the caller to keep on the
 // session.
 //
-// The options name no credentials. The passkey names its account in the response.
+// The options name no credentials. The passkey names its user in the response.
 func (rp *RelyingParty) BeginDiscoverableLogin() (options, state []byte, err error) {
 	request, session, err := rp.web.BeginDiscoverableLogin(webauthn.WithUserVerification(protocol.VerificationRequired))
 	if err != nil {
@@ -295,7 +295,7 @@ func (rp *RelyingParty) FinishLogin(user es.User, passkeys []es.Passkey, state, 
 		return es.Passkey{}, false, errors.Join(ErrVerify, err)
 	}
 
-	credential, err := rp.web.ValidateLogin(account{
+	credential, err := rp.web.ValidateLogin(webauthnUser{
 		handle:      user.Handle,
 		name:        user.Email,
 		credentials: credentialsOf(passkeys),
@@ -307,8 +307,8 @@ func (rp *RelyingParty) FinishLogin(user es.User, passkeys []es.Passkey, state, 
 	return signedPasskey(passkeys, credential, parsed)
 }
 
-// FinishDiscoverableLogin checks the assertion of a login that did not name an account. The state is the one that
-// [RelyingParty.BeginDiscoverableLogin] returned. The passkey names its account in the response, as the user handle.
+// FinishDiscoverableLogin checks the assertion of a login that did not name a user. The state is the one that
+// [RelyingParty.BeginDiscoverableLogin] returned. The passkey names its user in the response, as the user handle.
 // The function lookup returns the user with that handle and the passkeys of the user. The other results are those of
 // [RelyingParty.FinishLogin], and the user is added.
 //
@@ -341,7 +341,7 @@ func (rp *RelyingParty) FinishDiscoverableLogin(
 			return nil, lookupErr
 		}
 
-		return account{
+		return webauthnUser{
 			handle:      user.Handle,
 			name:        user.Email,
 			credentials: credentialsOf(passkeys),

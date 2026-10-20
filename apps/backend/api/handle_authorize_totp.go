@@ -29,7 +29,7 @@ type AuthorizeResult struct {
 	UserXID  uint64         `json:"user_xid,string"`
 }
 
-// AuthorizeTOTPHandler handles POST /auth/totp. It is the second factor of an account without a passkey. A valid code
+// AuthorizeTOTPHandler handles POST /auth/totp. It is the second factor of a user without a passkey. A valid code
 // from a time step after the last accepted one completes the login.
 //
 // The risk engine decides what the session may do: the session is authorized, limited, flagged for review or refused.
@@ -48,8 +48,8 @@ type AuthorizeTOTPHandler struct {
 
 // ServeHTTP implements [web.Handler]. It responds with an [AuthorizeResult].
 //
-// It returns [ErrNoAccount] if the session is bound to no account. It returns [ErrAuthenticationFailed] if the code is
-// wrong or reused, or the account has a passkey, has no confirmed TOTP factor or cannot authenticate. It returns
+// It returns [ErrSessionWithoutUser] if the session is bound to no user. It returns [ErrAuthenticationFailed] if the code is
+// wrong or reused, or the user has a passkey, has no confirmed TOTP factor or cannot authenticate. It returns
 // [ErrRiskDenied] if the risk engine refuses the login.
 func (h *AuthorizeTOTPHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	bodyArgs := codeHandlerBodyArgsPool.Get()
@@ -70,7 +70,7 @@ func (h *AuthorizeTOTPHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 
 	user, err := User(ctx)
 	if err != nil {
-		return ErrNoAccount
+		return ErrSessionWithoutUser
 	}
 
 	passkeys, err := h.PasskeyBatchReader.ReadAll(ctx, es.Passkey{
@@ -100,7 +100,7 @@ func (h *AuthorizeTOTPHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 		Ciphertext: user.TOTPCiphertext,
 	}, es.WriteCreate|es.DecryptTOTPSecret)
 	if errors.Is(err, vault.ErrDecrypt) {
-		// The ciphertext was not made for this user. For example, the row was copied from another account.
+		// The ciphertext was not made for this user. For example, the row was copied from another user.
 		SetEvent(ctx, es.EventTOTPCiphertextRefused)
 
 		return ErrAuthenticationFailed

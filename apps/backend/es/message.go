@@ -2,7 +2,7 @@ package es
 
 import "time"
 
-// Message is a message to the owner of an account, sent outside the API. A [Writer] with [WriteCreate] sends it. The
+// Message is a message to the owner of a user, sent outside the API. A [Writer] with [WriteCreate] sends it. The
 // message option of the [Op] selects which message it is, and so which fields the writer reads.
 type Message struct {
 	// Email is the address the message goes to.

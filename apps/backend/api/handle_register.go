@@ -96,11 +96,11 @@ type BeginRegistryHandlerResult struct {
 	Flags es.SessionFlag `json:"flags"`
 }
 
-// BeginRegistryHandler handles POST /register. It creates the account and sends a verification token to the email. If
+// BeginRegistryHandler handles POST /register. It creates the user and sends a verification token to the email. If
 // the email is taken, it sends a notice to that email instead.
 //
 // Both cases respond in the same way and set the same flags on the session. The response does not show whether the
-// email is registered. For a new account, the session is bound to the account. For a taken email, the session is bound
+// email is registered. For a new user, the session is bound to the user. For a taken email, the session is bound
 // to nothing and keeps the hash of a verification token that nobody received. The completing step then fails like a
 // wrong verification token.
 type BeginRegistryHandler struct {
@@ -277,7 +277,7 @@ type CompleteRegistryHandlerResult struct {
 }
 
 // CompleteRegistryHandler handles POST /register/complete. It accepts the verification token on the session that began
-// the registration, marks the account as verified and lets the session enroll a factor. A verification token works
+// the registration, marks the user as verified and lets the session enroll a factor. A verification token works
 // once, because the update that accepts it clears it.
 type CompleteRegistryHandler struct {
 	SessionGroupWriter es.Writer[es.SessionGroup]
@@ -286,7 +286,7 @@ type CompleteRegistryHandler struct {
 
 // ServeHTTP implements [web.Handler].
 //
-// It returns [ErrAuthenticationFailed] if the verification token is wrong, expired or was never issued for an account.
+// It returns [ErrAuthenticationFailed] if the verification token is wrong, expired or was never issued for a user.
 func (h *CompleteRegistryHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	bodyArgs := completeRegistryHandlerBodyArgsPool.Get()
 	defer completeRegistryHandlerBodyArgsPool.Put(bodyArgs)

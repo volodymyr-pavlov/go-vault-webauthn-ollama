@@ -92,9 +92,12 @@ type Server struct {
 	retrievePasskeysHandler         *api.RetrievePasskeysHandler
 	beginRemovePasskeyHandler       *api.BeginRemovePasskeyHandler
 	removePasskeyHandler            *api.RemovePasskeyHandler
-	beginDeleteAccountHandler       *api.BeginDeleteAccountHandler
-	deleteAccountHandler            *api.DeleteAccountHandler
-	exportAccountHandler            *api.ExportAccountHandler
+	beginDeleteUserHandler          *api.BeginDeleteUserHandler
+	deleteUserHandler               *api.DeleteUserHandler
+	exportUserHandler               *api.ExportUserHandler
+	addAuthenticatorHandler         *api.AddAccountHandler
+	listAuthenticatorsHandler       *api.ListAccountsHandler
+	removeAuthenticatorHandler      *api.RemoveAccountHandler
 	removeTOTPHandler               *api.RemoveTOTPHandler
 }
 
@@ -222,14 +225,14 @@ func NewServer(addr string, logger *slog.Logger, env *config.Env, opts config.Op
 			Options:            totp.Options{},
 		},
 		completeEnrollTOTPHandler: &api.CompleteEnrollTOTPHandler{
-			AccountGroupWriter: env.AccountGroupWriter,
-			TransitWriter:      env.TransitWriter,
-			Options:            totp.Options{},
-			MessageWriter:      env.MessageWriter,
-			SystemClock:        env.SystemClock,
+			UserGroupWriter: env.UserGroupWriter,
+			TransitWriter:   env.TransitWriter,
+			Options:         totp.Options{},
+			MessageWriter:   env.MessageWriter,
+			SystemClock:     env.SystemClock,
 		},
 		issueRecoveryCodesHandler: &api.IssueRecoveryCodesHandler{
-			AccountGroupWriter:    env.AccountGroupWriter,
+			UserGroupWriter:       env.UserGroupWriter,
 			RecoveryCodeSnowflake: env.RecoveryCodeSnowflake,
 			TransitWriter:         env.TransitWriter,
 			MessageWriter:         env.MessageWriter,
@@ -316,24 +319,43 @@ func NewServer(addr string, logger *slog.Logger, env *config.Env, opts config.Op
 		retrievePasskeysHandler: &api.RetrievePasskeysHandler{
 			PasskeyBatchReader: env.PasskeyBatchReader,
 		},
-		beginDeleteAccountHandler: &api.BeginDeleteAccountHandler{
+		beginDeleteUserHandler: &api.BeginDeleteUserHandler{
 			PasskeyBatchReader: env.PasskeyBatchReader,
 			RelyingParty:       env.RelyingParty,
 			SystemClock:        env.SystemClock,
 			SessionGroupWriter: env.SessionGroupWriter,
 		},
-		deleteAccountHandler: &api.DeleteAccountHandler{
-			PasskeyBatchReader: env.PasskeyBatchReader,
-			RelyingParty:       env.RelyingParty,
-			SystemClock:        env.SystemClock,
-			AccountGroupWriter: env.AccountGroupWriter,
-			SessionGroupWriter: env.SessionGroupWriter,
-			MessageWriter:      env.MessageWriter,
+		deleteUserHandler: &api.DeleteUserHandler{
+			AccountBatchReader:     env.AccountBatchReader,
+			AuthenticatorKeyWriter: env.AuthenticatorKeyWriter,
+			PasskeyBatchReader:     env.PasskeyBatchReader,
+			RelyingParty:           env.RelyingParty,
+			SystemClock:            env.SystemClock,
+			UserGroupWriter:        env.UserGroupWriter,
+			SessionGroupWriter:     env.SessionGroupWriter,
+			MessageWriter:          env.MessageWriter,
 		},
-		exportAccountHandler: &api.ExportAccountHandler{
+		addAuthenticatorHandler: &api.AddAccountHandler{
+			AccountBatchReader:     env.AccountBatchReader,
+			AccountGroupWriter:     env.AccountGroupWriter,
+			AuthenticatorKeyWriter: env.AuthenticatorKeyWriter,
+			AccountSnowflake:       env.AccountSnowflake,
+		},
+		listAuthenticatorsHandler: &api.ListAccountsHandler{
+			AccountBatchReader:     env.AccountBatchReader,
+			AuthenticatorKeyReader: env.AuthenticatorKeyReader,
+			SystemClock:            env.SystemClock,
+		},
+		removeAuthenticatorHandler: &api.RemoveAccountHandler{
+			AccountReader:          env.AccountReader,
+			AccountGroupWriter:     env.AccountGroupWriter,
+			AuthenticatorKeyWriter: env.AuthenticatorKeyWriter,
+		},
+		exportUserHandler: &api.ExportUserHandler{
 			PasskeyBatchReader:     env.PasskeyBatchReader,
 			SessionBatchReader:     env.SessionBatchReader,
 			HTTPRequestBatchReader: env.HTTPRequestBatchReader,
+			AccountBatchReader:     env.AccountBatchReader,
 		},
 		beginRemovePasskeyHandler: &api.BeginRemovePasskeyHandler{
 			PasskeyReader:      env.PasskeyReader,
@@ -348,13 +370,13 @@ func NewServer(addr string, logger *slog.Logger, env *config.Env, opts config.Op
 			PasskeyBatchReader: env.PasskeyBatchReader,
 			RelyingParty:       env.RelyingParty,
 			SystemClock:        env.SystemClock,
-			AccountGroupWriter: env.AccountGroupWriter,
+			UserGroupWriter:    env.UserGroupWriter,
 			SessionGroupWriter: env.SessionGroupWriter,
 			MessageWriter:      env.MessageWriter,
 		},
 		removeTOTPHandler: &api.RemoveTOTPHandler{
-			AccountGroupWriter: env.AccountGroupWriter,
-			MessageWriter:      env.MessageWriter,
+			UserGroupWriter: env.UserGroupWriter,
+			MessageWriter:   env.MessageWriter,
 		},
 	}
 	s.metricsServer = &http.Server{
@@ -404,38 +426,41 @@ func (s *Server) Routes() *web.Mux {
 	m.POST(prefix+"/session", s.beginSessionHandler, s.logged(api.BeginSession), s.rateLimit.SessionOpenMiddleware())
 	m.GET(prefix+"/session", s.retrieveSessionHandler, s.logged(api.RetrieveSession), s.session(api.RetrieveSession))
 	m.DELETE(prefix+"/session", s.terminateSessionHandler, s.logged(api.TerminateSession), s.session(api.TerminateSession))
-	m.POST(prefix+"/register", s.beginRegistryHandler, s.logged(api.BeginRegistry), s.session(api.BeginRegistry), s.accountLimited())
+	m.POST(prefix+"/register", s.beginRegistryHandler, s.logged(api.BeginRegistry), s.session(api.BeginRegistry), s.userLimited())
 	m.POST(prefix+"/register/complete", s.completeRegistryHandler, s.logged(api.CompleteRegistry), s.session(api.CompleteRegistry))
 	m.POST(prefix+"/enroll/passkey", s.beginEnrollPasskeyHandler, s.logged(api.BeginEnrollPasskey), s.session(api.BeginEnrollPasskey))
 	m.POST(prefix+"/enroll/passkey/complete", s.completeEnrollPasskeyHandler, s.logged(api.CompleteEnrollPasskey), s.session(api.CompleteEnrollPasskey))
 	m.POST(prefix+"/enroll/totp", s.beginEnrollTOTPHandler, s.logged(api.BeginEnrollTOTP), s.session(api.BeginEnrollTOTP))
 	m.POST(prefix+"/enroll/totp/complete", s.completeEnrollTOTPHandler, s.logged(api.CompleteEnrollTOTP), s.session(api.CompleteEnrollTOTP))
 	m.POST(prefix+"/enroll/recovery", s.issueRecoveryCodesHandler, s.logged(api.IssueRecoveryCodes), s.session(api.IssueRecoveryCodes))
-	m.POST(prefix+"/auth/passkey", s.beginAuthorizePasskeyHandler, s.logged(api.BeginAuthorizePasskey), s.session(api.BeginAuthorizePasskey), s.accountLimited())
+	m.POST(prefix+"/auth/passkey", s.beginAuthorizePasskeyHandler, s.logged(api.BeginAuthorizePasskey), s.session(api.BeginAuthorizePasskey), s.userLimited())
 	m.POST(prefix+"/auth/passkey/complete", s.completeAuthorizePasskeyHandler, s.logged(api.CompleteAuthorizePasskey), s.session(api.CompleteAuthorizePasskey))
-	m.POST(prefix+"/auth/password", s.authorizePasswordHandler, s.logged(api.AuthorizePassword), s.session(api.AuthorizePassword), s.accountLimited())
+	m.POST(prefix+"/auth/password", s.authorizePasswordHandler, s.logged(api.AuthorizePassword), s.session(api.AuthorizePassword), s.userLimited())
 	m.POST(prefix+"/auth/totp", s.authorizeTOTPHandler, s.logged(api.AuthorizeTOTP), s.session(api.AuthorizeTOTP))
-	m.POST(prefix+"/auth/recovery", s.authorizeRecoveryHandler, s.logged(api.AuthorizeRecovery), s.session(api.AuthorizeRecovery), s.accountLimited())
-	m.POST(prefix+"/recover/request", s.requestRecoveryHandler, s.logged(api.RequestRecovery), s.session(api.RequestRecovery), s.accountLimited())
+	m.POST(prefix+"/auth/recovery", s.authorizeRecoveryHandler, s.logged(api.AuthorizeRecovery), s.session(api.AuthorizeRecovery), s.userLimited())
+	m.POST(prefix+"/recover/request", s.requestRecoveryHandler, s.logged(api.RequestRecovery), s.session(api.RequestRecovery), s.userLimited())
 	m.POST(prefix+"/recover/cancel", s.cancelRecoveryHandler, s.logged(api.CancelRecovery), s.session(api.CancelRecovery))
-	m.POST(prefix+"/recover/claim", s.claimRecoveryHandler, s.logged(api.ClaimRecovery), s.session(api.ClaimRecovery), s.accountLimited())
+	m.POST(prefix+"/recover/claim", s.claimRecoveryHandler, s.logged(api.ClaimRecovery), s.session(api.ClaimRecovery), s.userLimited())
 	m.POST(prefix+"/recover/grant", s.grantRecoveryHandler, s.logged(api.GrantRecovery), s.session(api.GrantRecovery))
 	m.GET(prefix+"/passkeys", s.retrievePasskeysHandler, s.logged(api.RetrievePasskeys), s.session(api.RetrievePasskeys))
 	m.GET(prefix+"/sessions", s.listSessionsHandler, s.logged(api.ListSessions), s.session(api.ListSessions))
 	m.DELETE(prefix+"/sessions/{session_xid}", s.removeSessionHandler, s.logged(api.RemoveSession), s.session(api.RemoveSession))
-	m.POST(prefix+"/account/deletion", s.beginDeleteAccountHandler, s.logged(api.BeginDeleteAccount), s.session(api.BeginDeleteAccount))
-	m.POST(prefix+"/account/deletion/confirm", s.deleteAccountHandler, s.logged(api.DeleteAccount), s.session(api.DeleteAccount))
-	m.GET(prefix+"/account/export", s.exportAccountHandler, s.logged(api.ExportAccount), s.session(api.ExportAccount))
+	m.POST(prefix+"/user/deletion", s.beginDeleteUserHandler, s.logged(api.BeginDeleteUser), s.session(api.BeginDeleteUser))
+	m.POST(prefix+"/user/deletion/confirm", s.deleteUserHandler, s.logged(api.DeleteUser), s.session(api.DeleteUser))
+	m.POST(prefix+"/accounts", s.addAuthenticatorHandler, s.logged(api.AddAccount), s.session(api.AddAccount))
+	m.GET(prefix+"/accounts", s.listAuthenticatorsHandler, s.logged(api.ListAccounts), s.session(api.ListAccounts))
+	m.DELETE(prefix+"/accounts/{account_xid}", s.removeAuthenticatorHandler, s.logged(api.RemoveAccount), s.session(api.RemoveAccount))
+	m.GET(prefix+"/user/export", s.exportUserHandler, s.logged(api.ExportUser), s.session(api.ExportUser))
 	m.POST(prefix+"/passkeys/{passkey_xid}/removal", s.beginRemovePasskeyHandler, s.logged(api.BeginRemovePasskey), s.session(api.BeginRemovePasskey))
 	m.POST(prefix+"/passkeys/{passkey_xid}/removal/confirm", s.removePasskeyHandler, s.logged(api.RemovePasskey), s.session(api.RemovePasskey))
 	m.DELETE(prefix+"/totp", s.removeTOTPHandler, s.logged(api.RemoveTOTP), s.session(api.RemoveTOTP))
 	return m
 }
 
-// accountLimited returns the middleware that limits the request rate for each account. It takes the account from the
+// userLimited returns the middleware that limits the request rate for each account. It takes the user from the
 // email in the request body.
-func (s *Server) accountLimited() web.Middleware {
-	return s.rateLimit.AccountMiddleware()
+func (s *Server) userLimited() web.Middleware {
+	return s.rateLimit.UserMiddleware()
 }
 
 // logged returns the metrics middleware and the request log middleware for the endpoint with the resource code.

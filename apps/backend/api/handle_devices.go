@@ -16,7 +16,7 @@ import (
 var _ web.Handler = &ListSessionsHandler{}
 var _ web.Handler = &RemoveSessionHandler{}
 
-// DeviceResult describes one logged-in device of the account.
+// DeviceResult describes one logged-in device of the user.
 type DeviceResult struct {
 	SessionXID uint64    `json:"session_xid,string"`
 	Country    string    `json:"country,omitempty"`
@@ -32,8 +32,8 @@ type ListSessionsHandlerResult struct {
 	Sessions []DeviceResult `json:"sessions"`
 }
 
-// ListSessionsHandler handles GET /sessions. It lists the logged-in sessions of the account, newest first, so that the
-// user can see where the account is in use and end a session that is not theirs.
+// ListSessionsHandler handles GET /sessions. It lists the logged-in sessions of the user, newest first, so that the
+// user can see where the user is in use and end a session that is not theirs.
 type ListSessionsHandler struct {
 	SessionBatchReader es.BatchReader[es.Session]
 	SystemClock        clock.Clock
@@ -44,11 +44,11 @@ type ListSessionsHandler struct {
 
 // ServeHTTP implements [web.Handler].
 //
-// It returns [ErrNoAccount] if the session is bound to no account.
+// It returns [ErrSessionWithoutUser] if the session is bound to no user.
 func (h *ListSessionsHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	user, err := User(ctx)
 	if err != nil {
-		return ErrNoAccount
+		return ErrSessionWithoutUser
 	}
 
 	current, err := Session(ctx)
@@ -86,7 +86,7 @@ func (h *ListSessionsHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	return web.Write(ctx, fasthttp.StatusOK, result)
 }
 
-// RemoveSessionHandler handles DELETE /sessions/{session_xid}. It ends another session of the account, for example one
+// RemoveSessionHandler handles DELETE /sessions/{session_xid}. It ends another session of the user, for example one
 // on a lost device. The session middleware refuses the ended session from its next request.
 type RemoveSessionHandler struct {
 	SessionReader      es.Reader[es.Session]
@@ -96,8 +96,8 @@ type RemoveSessionHandler struct {
 
 // ServeHTTP implements [web.Handler]. It responds with status 204.
 //
-// It returns [ErrNoParamSessionXID] if the path has no session identifier and [ErrNoAccount] if the session is bound to
-// no account. It returns [ErrNotFoundDevice] if the account has no such session.
+// It returns [ErrNoParamSessionXID] if the path has no session identifier and [ErrSessionWithoutUser] if the session is bound to
+// no user. It returns [ErrNotFoundDevice] if the user has no such session.
 func (h *RemoveSessionHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	sessionXID := web.ParamUint[uint64](ctx, "session_xid")
 	if sessionXID == 0 {
@@ -106,7 +106,7 @@ func (h *RemoveSessionHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 
 	user, err := User(ctx)
 	if err != nil {
-		return ErrNoAccount
+		return ErrSessionWithoutUser
 	}
 
 	target, err := h.SessionReader.ReadOne(ctx, es.Session{

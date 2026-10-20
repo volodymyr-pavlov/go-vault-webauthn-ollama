@@ -60,7 +60,7 @@ Rules already scored this login {{.score}}/100, level {{.level}}. Your analysis 
 for a higher one; a lower level is ignored.
 
 Login facts (coarse, pseudonymous):
-- account pseudonym: {{.pseudonym}}
+- user pseudonym: {{.pseudonym}}
 - country: {{.country}}
 - hour of day (UTC bucket): {{.hour_bucket}}
 - factor that passed: {{.factor}}
@@ -68,9 +68,9 @@ Login facts (coarse, pseudonymous):
 - failed attempts in the last 10 minutes (5 means five or more): {{.failed_attempts}}
 - wrong codes since the last good one (3 means three or more): {{.totp_failures}}
 
-The signals mean: new_device = the account logged in before, but not from this device; recent_enrollment = a factor
+The signals mean: new_device = the user logged in before, but not from this device; recent_enrollment = a factor
 was enrolled in the last day; unusual_hour = the hour is far from the hours of the earlier logins; impossible_travel =
-the move from the last login place is too fast; shared_address = five or more accounts tried this address in the last
+the move from the last login place is too fast; shared_address = five or more users tried this address in the last
 hour.
 
 Answer with one JSON object and nothing else, with exactly these fields:

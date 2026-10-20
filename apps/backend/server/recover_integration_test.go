@@ -130,7 +130,7 @@ func TestRecoveryGrantExpires(t *testing.T) {
 }
 
 // TestLoginCancelsRecovery proves that a login with a factor ends an open recovery request, because the owner is still
-// in control of the account.
+// in control of the user.
 func TestLoginCancelsRecovery(t *testing.T) {
 	s := newStand(t)
 	email := fmt.Sprintf("frank-%d@example.com", time.Now().UnixNano())

@@ -274,7 +274,7 @@ func TestUniformResponses(t *testing.T) {
 	session := s.open()
 	s.register(session.Handle, known)
 
-	// Registration of a taken address returns the same response as a new address, so it does not reveal accounts.
+	// Registration of a taken address returns the same response as a new address, so it does not reveal users.
 	second := s.open()
 	taken := s.call(http.MethodPost, "/v1/register", second.Handle, map[string]string{
 		"email":    known,
@@ -291,7 +291,7 @@ func TestUniformResponses(t *testing.T) {
 		"token": strings.Repeat("00", 32),
 	}), http.StatusUnauthorized, "AUTHENTICATION_FAILED")
 
-	// Passkey options for an unknown address list credentials as for a known one, so they do not reveal accounts.
+	// Passkey options for an unknown address list credentials as for a known one, so they do not reveal users.
 	for _, email := range []string{known, unknown, "nobody@example.com"} {
 		a := s.call(http.MethodPost, "/v1/auth/passkey", s.open().Handle, map[string]string{
 			"email": email,
@@ -318,7 +318,7 @@ func TestNoDowngrade(t *testing.T) {
 		t.Fatalf("enroll: %+v", a.Error)
 	}
 	s.refuses(s.loginPassword(s.open().Handle, email, testPassword), http.StatusUnauthorized, "AUTHENTICATION_FAILED")
-	s.refuses(s.call(http.MethodPost, "/v1/enroll/totp", session.Handle, nil), http.StatusForbidden, "PASSKEY_ACCOUNT")
+	s.refuses(s.call(http.MethodPost, "/v1/enroll/totp", session.Handle, nil), http.StatusForbidden, "PASSKEY_USER")
 }
 
 func TestPasskeyRefusals(t *testing.T) {
@@ -654,7 +654,7 @@ func TestDiscoverableLogin(t *testing.T) {
 	}
 
 	// discover runs a login without an address. The options list no credentials. The user handle of the passkey names
-	// the account.
+	// the user.
 	discover := func(handle []byte) apiResponse {
 		login := s.open()
 		begin := s.call(http.MethodPost, "/v1/auth/passkey", login.Handle, map[string]string{})
@@ -683,7 +683,7 @@ func TestDiscoverableLogin(t *testing.T) {
 		t.Fatalf("login: %+v", result)
 	}
 
-	// A response with no user handle, or with a handle that matches no account, fails like any bad assertion.
+	// A response with no user handle, or with a handle that matches no user, fails like any bad assertion.
 	s.refuses(discover(nil), http.StatusUnauthorized, "AUTHENTICATION_FAILED")
 	s.refuses(discover([]byte("not a handle that exists")), http.StatusUnauthorized, "AUTHENTICATION_FAILED")
 }

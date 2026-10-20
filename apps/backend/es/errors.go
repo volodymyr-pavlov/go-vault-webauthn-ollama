@@ -23,8 +23,11 @@ var ErrDuplicate = errors.New("es: duplicated record")
 // the application never creates.
 var ErrNoMethod = errors.New("es: the store does not offer this method")
 
-// ErrLastFactor reports that a removal would leave the account without a way to log in: the factor is the last one.
-var ErrLastFactor = errors.New("es: the factor is the last one of the account")
+// ErrLastFactor reports that a removal would leave the user without a way to log in: the factor is the last one.
+var ErrLastFactor = errors.New("es: the factor is the last one of the user")
 
-// ErrNoTOTPSecret reports that the account has no TOTP secret to remove.
-var ErrNoTOTPSecret = errors.New("es: the account has no TOTP secret")
+// ErrTooManyAccounts reports that a user would have more than [MaxAccounts] accounts in the authenticator.
+var ErrTooManyAccounts = errors.New("es: the authenticator would hold too many accounts")
+
+// ErrNoTOTPSecret reports that the user has no TOTP secret to remove.
+var ErrNoTOTPSecret = errors.New("es: the user has no TOTP secret")

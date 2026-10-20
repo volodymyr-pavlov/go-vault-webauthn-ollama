@@ -34,11 +34,11 @@ type IssueRecoveryCodesHandlerResult struct {
 	Codes []string `json:"codes"`
 }
 
-// IssueRecoveryCodesHandler handles POST /enroll/recovery. It makes a new set of recovery codes for the account, stores
+// IssueRecoveryCodesHandler handles POST /enroll/recovery. It makes a new set of recovery codes for the user, stores
 // their keyed hashes, notifies the user and returns the codes. The API shows the codes once. The earlier set stops
 // working.
 type IssueRecoveryCodesHandler struct {
-	AccountGroupWriter    es.Writer[es.AccountGroup]
+	UserGroupWriter       es.Writer[es.UserGroup]
 	RecoveryCodeSnowflake *snowid.Snowflake
 	TransitWriter         es.Writer[es.Transit]
 	MessageWriter         es.Writer[es.Message]
@@ -46,11 +46,11 @@ type IssueRecoveryCodesHandler struct {
 
 // ServeHTTP implements [web.Handler].
 //
-// It returns [ErrNoAccount] if the session is bound to no account.
+// It returns [ErrSessionWithoutUser] if the session is bound to no user.
 func (h *IssueRecoveryCodesHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	user, err := User(ctx)
 	if err != nil {
-		return ErrNoAccount
+		return ErrSessionWithoutUser
 	}
 
 	codes := make([]string, 0, RecoveryCodeCount)
@@ -77,7 +77,7 @@ func (h *IssueRecoveryCodesHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 		})
 	}
 
-	_, err = h.AccountGroupWriter.WriteOne(ctx, es.AccountGroup{
+	_, err = h.UserGroupWriter.WriteOne(ctx, es.UserGroup{
 		User: es.User{
 			ID: user.ID,
 		},
@@ -154,7 +154,7 @@ type AuthorizeRecoveryHandlerResult struct {
 	Flags es.SessionFlag `json:"flags"`
 }
 
-// AuthorizeRecoveryHandler handles POST /auth/recovery. An unused recovery code binds the session to the account. The
+// AuthorizeRecoveryHandler handles POST /auth/recovery. An unused recovery code binds the session to the user. The
 // session may then enroll a factor and do nothing else, because a recovery code does not log in. The handler uses the
 // code up, writes a security event and notifies the user.
 //
@@ -172,7 +172,7 @@ type AuthorizeRecoveryHandler struct {
 
 // ServeHTTP implements [web.Handler].
 //
-// It returns [ErrAuthenticationFailed] if the code is wrong or already used, or the account cannot authenticate. Each
+// It returns [ErrAuthenticationFailed] if the code is wrong or already used, or the user cannot authenticate. Each
 // refusal adds one to the failure count of the session.
 func (h *AuthorizeRecoveryHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	bodyArgs := authorizeRecoveryHandlerBodyArgsPool.Get()

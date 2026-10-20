@@ -249,6 +249,11 @@ func newStand(t *testing.T) *stand {
 		RecoveryRequestTx: env.RecoveryRequestTx,
 	}
 	env.AccountGroupWriter = &mysql.AccountGroupWriter{
+		Database:    env.Database,
+		SystemClock: s.clock,
+		UserTx:      env.UserTx,
+	}
+	env.UserGroupWriter = &mysql.UserGroupWriter{
 		Database:       env.Database,
 		SystemClock:    s.clock,
 		UserTx:         env.UserTx,

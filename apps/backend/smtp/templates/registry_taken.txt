@@ -1,1 +1,1 @@
-An account with this address exists already. If this was you, log in instead.
+A user with this address exists already. If this was you, log in instead.

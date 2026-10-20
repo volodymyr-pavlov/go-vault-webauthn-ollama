@@ -77,12 +77,12 @@ type AuthorizePasswordHandlerResult struct {
 	Flags es.SessionFlag `json:"flags"`
 }
 
-// AuthorizePasswordHandler handles POST /auth/password. It is the first factor of an account without a passkey. A
-// correct password binds the session to the account, and the TOTP code is the next step.
+// AuthorizePasswordHandler handles POST /auth/password. It is the first factor of a user without a passkey. A
+// correct password binds the session to the user, and the TOTP code is the next step.
 //
-// A wrong password, an unknown email, an account that cannot authenticate and an account with a passkey all fail in the
+// A wrong password, an unknown email, a user that cannot authenticate and a user with a passkey all fail in the
 // same way. They also take about the same time. The handler always checks a password hash, and uses a stand-in hash if
-// there is no account.
+// there is no user.
 type AuthorizePasswordHandler struct {
 	UserReader         es.Reader[es.User]
 	PasskeyBatchReader es.BatchReader[es.Passkey]
@@ -93,7 +93,7 @@ type AuthorizePasswordHandler struct {
 	SessionGroupWriter es.Writer[es.SessionGroup]
 
 	// StandInHash is the hash of a random password, made at startup. The handler checks the password against it if no
-	// account exists.
+	// user exists.
 	StandInHash string
 }
 
@@ -141,7 +141,7 @@ func (h *AuthorizePasswordHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 
 		for _, p := range passkeys {
 			if p.Present() {
-				// The account has a passkey, so the password is not a factor for it, whatever the password was.
+				// The user has a passkey, so the password is not a factor for it, whatever the password was.
 				refused = true
 			}
 		}
