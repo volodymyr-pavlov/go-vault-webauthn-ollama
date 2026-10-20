@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/volodymyr-pavlov/go-vault-webauthn-ollama/compare/v1.1.0...v1.2.0) (2026-10-20)
+
+### Features
+
+* **backend:** keep the TOTP accounts of other services in Vault and call the person a user ([a9f01b5](https://github.com/volodymyr-pavlov/go-vault-webauthn-ollama/commit/a9f01b55630c826d537c8fa7297b38c13386876d))
+* **frontend:** add the authenticator codes, three tabs, the camera scan and a login wait ([aa93ecf](https://github.com/volodymyr-pavlov/go-vault-webauthn-ollama/commit/aa93ecf0f8016dca1a116717ca03a726db2865c3))
+* **totp:** import accounts from otpauth and Google export links ([5dc8f31](https://github.com/volodymyr-pavlov/go-vault-webauthn-ollama/commit/5dc8f311d9a7fe89db8c83bc97077af0ad0beb19))
+
 ## [1.1.0](https://github.com/volodymyr-pavlov/go-vault-webauthn-ollama/compare/v1.0.0...v1.1.0) (2026-10-20)
 
 ### Features
