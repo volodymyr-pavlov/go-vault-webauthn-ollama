@@ -159,7 +159,7 @@ type device struct {
 var stands atomic.Int64
 
 // newStand builds and serves a stand. The tests share one database, so each stand uses its own addresses.
-func newStand(t *testing.T) *stand {
+func newStand(t *testing.T, tune ...func(*config.Options)) *stand {
 	t.Helper()
 	redisServer := miniredis.RunT(t)
 	transit := vaulttest.New(t)
@@ -179,6 +179,10 @@ func newStand(t *testing.T) *stand {
 		Flags:         config.FlagMockAdvisor,
 		LogLevel:      "warn",
 	}
+	for _, change := range tune {
+		change(&opts)
+	}
+
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	env, err := config.NewEnv(context.Background(), logger, opts)
 	if err != nil {

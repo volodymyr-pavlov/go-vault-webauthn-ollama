@@ -49,6 +49,10 @@ type RiskAssessor struct {
 
 	// Engine decides on the signals.
 	Engine *ai.Engine
+
+	// Anonymizing is the list of the address ranges of VPN, proxy and hosting providers. A nil list is empty, so the
+	// signal is never set.
+	Anonymizing *geo.Ranges
 }
 
 // ReadOne implements [es.Reader]. It returns the attempt with Outcome set. The [Op] is not used.
@@ -163,6 +167,10 @@ func (r *RiskAssessor) ReadOne(ctx context.Context, a LoginAttempt, _ es.Op) (Lo
 		if hours > 0 && km/hours > ai.ImpossibleSpeedKmh {
 			signals = signals.With(ai.SignalImpossibleTravel)
 		}
+	}
+
+	if r.Anonymizing.Contains(session.IP) {
+		signals = signals.With(ai.SignalAnonymizingNetwork)
 	}
 
 	for _, p := range passkeys {

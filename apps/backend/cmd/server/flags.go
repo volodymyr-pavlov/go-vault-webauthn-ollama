@@ -23,6 +23,7 @@ func parseFlags(args []string) (config.Options, error) {
 	set.StringVar(&opts.RedisAddr, "redis", "127.0.0.1:6379", "the address of Redis")
 	redisSentinels := set.String("redis-sentinels", "", "the addresses of the Redis Sentinel nodes, separated by commas; if set, the service follows the master of -redis-master and ignores -redis")
 	set.StringVar(&opts.RedisMaster, "redis-master", "", "the name of the master that the Redis Sentinel nodes monitor")
+	set.StringVar(&opts.AnonymizingRanges, "anonymizing-ranges", "", "a text file with the address ranges of VPN, proxy and hosting providers, one prefix on each line; a login from one sets a risk signal")
 	set.StringVar(&opts.VaultAddr, "vault", "", "the address of Vault")
 	set.StringVar(&opts.VaultRoleID, "vault-role-id", "", "the AppRole role ID")
 	set.StringVar(&opts.VaultRoleIDFile, "vault-role-id-file", "", "the file that holds the AppRole role ID")

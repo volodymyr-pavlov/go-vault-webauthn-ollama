@@ -49,6 +49,10 @@ type Options struct {
 	RedisSentinels []string
 	RedisMaster    string
 
+	// AnonymizingRanges is the path of a text file with the address ranges of VPN, proxy and hosting providers, one prefix
+	// on each line. A login from one of them sets the anonymizing-network signal. If it is empty, the signal is never set.
+	AnonymizingRanges string
+
 	// VaultAddr is the address of Vault.
 	//
 	// VaultRoleID is the AppRole role ID. VaultRoleIDFile is the file that holds it, and it replaces VaultRoleID if

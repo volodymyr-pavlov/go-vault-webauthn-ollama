@@ -71,10 +71,10 @@ Login facts (coarse, pseudonymous):
 The signals mean: new_device = the user logged in before, but not from this device; recent_enrollment = a factor
 was enrolled in the last day; unusual_hour = the hour is far from the hours of the earlier logins; impossible_travel =
 the move from the last login place is too fast; shared_address = five or more users tried this address in the last
-hour.
+hour; anonymizing_network = the address belongs to a VPN, proxy or hosting provider.
 
 Answer with one JSON object and nothing else, with exactly these fields:
-{"risk_level": "low" | "medium" | "high", "reasons": [zero to five of "new_device", "recent_enrollment", "failed_attempts", "unusual_hour", "impossible_travel", "shared_address", "none"], "summary": "one sentence under 200 characters"}
+{"risk_level": "low" | "medium" | "high", "reasons": [zero to five of "new_device", "recent_enrollment", "failed_attempts", "unusual_hour", "impossible_travel", "shared_address", "anonymizing_network", "none"], "summary": "one sentence under 200 characters"}
 `
 
 // promptVariables are the variables of [promptTemplate].

@@ -147,6 +147,8 @@ func NewServer(addr string, logger *slog.Logger, env *config.Env, opts config.Op
 		Sessions: env.SessionBatchReader,
 		Transit:  env.TransitWriter,
 		Engine:   &engine,
+
+		Anonymizing: env.AnonymizingRanges,
 	}
 
 	s := &Server{

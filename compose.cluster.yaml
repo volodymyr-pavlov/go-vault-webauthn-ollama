@@ -31,6 +31,7 @@ x-backend: &backend
       ALPINE_IMAGE: ${ALPINE_IMAGE}
   volumes:
     - vault-handoff:/handoff:ro
+    - ./scripts/anonymizing-ranges.txt:/etc/login/anonymizing-ranges.txt:ro
   depends_on: &backend-depends
     vault-init:
       condition: service_completed_successfully
@@ -240,6 +241,7 @@ services:
       - -ollama=http://ollama:11434
       - -ollama-model=${OLLAMA_MODEL}
       - -ollama-digest=${OLLAMA_DIGEST}
+      - -anonymizing-ranges=/etc/login/anonymizing-ranges.txt
       - -log-level=${LOG_LEVEL:-info}
 
   backend-2:
@@ -263,6 +265,7 @@ services:
       - -ollama=http://ollama:11434
       - -ollama-model=${OLLAMA_MODEL}
       - -ollama-digest=${OLLAMA_DIGEST}
+      - -anonymizing-ranges=/etc/login/anonymizing-ranges.txt
       - -log-level=${LOG_LEVEL:-info}
 
   # One address for the backends and the page.

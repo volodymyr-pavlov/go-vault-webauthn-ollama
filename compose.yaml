@@ -118,9 +118,11 @@ services:
       - -ollama=http://ollama:11434
       - -ollama-model=${OLLAMA_MODEL}
       - -ollama-digest=${OLLAMA_DIGEST}
+      - -anonymizing-ranges=/etc/login/anonymizing-ranges.txt
       - -log-level=${LOG_LEVEL:-info}
     volumes:
       - vault-handoff:/handoff:ro
+      - ./scripts/anonymizing-ranges.txt:/etc/login/anonymizing-ranges.txt:ro
     ports:
       - '127.0.0.1:8080:8080/tcp'
     depends_on:

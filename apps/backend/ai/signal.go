@@ -30,6 +30,11 @@ const (
 	// and so do an office, a hotel or a mobile carrier that share one address among many people. Because of the honest
 	// cases, its weight is low: alone it never moves a login to another level.
 	SignalSharedAddress
+
+	// SignalAnonymizingNetwork is set when the address of the attempt is in a range of the list of VPN, proxy and hosting
+	// providers. Many honest people use a VPN, so the weight is low: alone it never moves a login to another level. It
+	// matters together with a new device or an impossible travel.
+	SignalAnonymizingNetwork
 )
 
 // signalNames are the names of the signals in bit order. They are also the names of the reasons that the advisor may
@@ -40,6 +45,7 @@ var signalNames = [...]string{
 	"unusual_hour",
 	"impossible_travel",
 	"shared_address",
+	"anonymizing_network",
 }
 
 // signalWeights are the points that each signal adds to the score, in bit order. The file docs/risk.md lists them.
@@ -49,6 +55,7 @@ var signalWeights = [...]uint8{
 	10,
 	40,
 	10,
+	15,
 }
 
 // The layout of a [Signals] value. The low bits hold the [Signal] set. Then come the failed attempts of the user or
@@ -68,7 +75,7 @@ const (
 	totpMask    = 0b11 << totpShift
 )
 
-// Signals are the facts about a login attempt that the rules score, packed into 10 bits: the set of [Signal] bits, the
+// Signals are the facts about a login attempt that the rules score, packed into 11 bits: the set of [Signal] bits, the
 // failed attempts and the wrong TOTP codes. The login handlers of the API compute them from the earlier sessions of the
 // user and from the passkeys of the user. The zero value has no signal.
 type Signals uint16

@@ -144,6 +144,7 @@ const (
 	ReasonUnusualHour
 	ReasonImpossibleTravel
 	ReasonSharedAddress
+	ReasonAnonymizingNetwork
 	ReasonNone
 )
 
@@ -155,6 +156,7 @@ var reasonNames = [...]string{
 	"unusual_hour",
 	"impossible_travel",
 	"shared_address",
+	"anonymizing_network",
 	"none",
 }
 

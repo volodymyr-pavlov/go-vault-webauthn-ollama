@@ -111,10 +111,14 @@ type Env struct {
 	// unknown, so that the answer takes the same time as for a known address.
 	StandInHash string
 
-	Locator       *geo.Locator
-	MessageWriter es.Writer[es.Message]
-	RateLimiter   *redis_rate.Limiter
-	Engine        *ai.Engine
+	Locator *geo.Locator
+
+	// AnonymizingRanges is the list of the address ranges of VPN, proxy and hosting providers. It is nil when the option is
+	// empty.
+	AnonymizingRanges *geo.Ranges
+	MessageWriter     es.Writer[es.Message]
+	RateLimiter       *redis_rate.Limiter
+	Engine            *ai.Engine
 
 	// Ollama is the client of the local model. It is nil only when [FlagMockAdvisor] is set, which only tests do.
 	Ollama *ai.Client
@@ -376,6 +380,13 @@ func (env *Env) connect(ctx context.Context, opts Options) error {
 		}
 
 		proxies = append(proxies, prefix)
+	}
+
+	if opts.AnonymizingRanges != "" {
+		env.AnonymizingRanges, err = geo.ReadRanges(opts.AnonymizingRanges)
+		if err != nil {
+			return errors.Join(fmt.Errorf("read the anonymizing ranges: %w", err), db.Close())
+		}
 	}
 
 	env.Locator, err = geo.New(proxies)

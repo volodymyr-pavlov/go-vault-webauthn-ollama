@@ -14,14 +14,22 @@ stricter decision, but it can never argue for a looser one.
 | An unusual hour for the user       | 10                          |
 | An impossible travel since the last login | 40                      |
 | A shared address: at least 5 different users tried the same address in the last hour | 10 |
+| An anonymizing network: the address is in the list of VPN, proxy and hosting ranges | 15 |
 
 The signals come from the sessions of the user, which form the login history, and from the user row. The service counts
 a new device only after the user has logged in once. The passkey and TOTP login handlers compute the shared address
 from the sessions of the address. Credential stuffing sets this signal, and so does an office or a mobile carrier. The
 score is capped at 100.
 
-In the code, `ai.Signals` is one `uint16`. Five flag bits hold the new device, the recent enrollment, the unusual hour,
-the impossible travel and the shared address. Three more bits count the failed attempts, which stop at 5. Two more bits
+The anonymizing network signal needs a list that the operator provides, with `-anonymizing-ranges`: a text file with
+one address prefix on each line. The service reads it at start-up and checks the address of each login against it in
+memory, so no address leaves the machine. Without the file the signal is never set. The stand ships a sample with the
+documentation ranges only, so it flags no real traffic. Many honest people use a VPN, so the signal has a low weight. It
+matters together with a new device or an impossible travel. The model sees only the name of the signal, never the
+address.
+
+In the code, `ai.Signals` is one `uint16`. Six flag bits hold the new device, the recent enrollment, the unusual hour,
+the impossible travel, the shared address and the anonymizing network. Three more bits count the failed attempts, which stop at 5. Two more bits
 count the wrong TOTP codes, which stop at 3. The advisor sees the names of the set signals and the two counts.
 
 ## The decision

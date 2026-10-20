@@ -41,9 +41,9 @@ func TestSignalsPackBits(t *testing.T) {
 		t.Errorf("a negative count must be zero, got %d", got)
 	}
 
-	// The whole value fits in ten bits.
-	if signals.WithFailedAttempts(900).WithTOTPFailures(900).With(^Signal(0)) >= 1<<10 {
-		t.Error("the signals must use no more than ten bits")
+	// The whole value fits in eleven bits.
+	if signals.WithFailedAttempts(900).WithTOTPFailures(900).With(^Signal(0)) >= 1<<11 {
+		t.Error("the signals must use no more than eleven bits")
 	}
 }
 
@@ -60,6 +60,7 @@ func TestSignalsNamesAndWeights(t *testing.T) {
 		{SignalUnusualHour, "unusual_hour", 10},
 		{SignalImpossibleTravel, "impossible_travel", 40},
 		{SignalSharedAddress, "shared_address", 10},
+		{SignalAnonymizingNetwork, "anonymizing_network", 15},
 	}
 	for _, c := range want {
 		signals := Signals(0).With(c.signal)
