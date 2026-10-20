@@ -1,0 +1,14 @@
+.bin/
+.DS_Store
+.idea/
+.env
+out/
+apps/frontend/node_modules/
+apps/frontend/.dist/
+apps/frontend/.reports/
+apps/frontend/.vitest/
+apps/frontend/test-results/
+apps/frontend/playwright-report/
+release/node_modules/
+release/.npm/
+*.pdf
