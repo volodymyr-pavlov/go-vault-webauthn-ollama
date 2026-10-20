@@ -45,7 +45,7 @@ Vault in dev mode keeps its keys in memory. When the container restarts, the key
 MySQL becomes a ciphertext that nothing can decrypt. The stand treats this as a lost key. `make stand-reset` wipes
 MySQL, and the users register again.
 
-The `vault-init` job runs on every `up`. It enables Transit, creates the two keys, writes the policy and the AppRole,
+The `vault-init` job runs on every `up`. It enables Transit and the TOTP engine, creates the two keys, writes the policy and the AppRole,
 and leaves the role ID and a wrapped secret ID in a volume. The backend unwraps the secret ID when it starts, which
 uses up the token.
 
@@ -94,26 +94,29 @@ node scripts/signed-request.mjs POST /v1/enroll/passkey
 | `POST /v1/session`                  | Opens a session.                                                         |
 | `GET /v1/session`                   | Shows the flags of the session.                                          |
 | `DELETE /v1/session`                | Logs out.                                                                |
-| `POST /v1/register`, `/complete`    | Registers an account and verifies it.                                    |
+| `POST /v1/register`, `/complete`    | Registers a user and verifies it.                                    |
 | `POST /v1/enroll/passkey`, `/complete` | Enrolls a passkey.                                                    |
 | `POST /v1/enroll/totp`, `/complete` | Enrolls a code generator. The secret is shown once.                      |
 | `POST /v1/enroll/recovery`          | Issues recovery codes. They are shown once.                              |
-| `POST /v1/auth/passkey`, `/complete`| Logs in with a passkey. Without an email the login is discoverable: the passkey names the account. |
+| `POST /v1/auth/passkey`, `/complete`| Logs in with a passkey. Without an email the login is discoverable: the passkey names the user. |
 | `POST /v1/auth/password`, `/v1/auth/totp` | Logs in with a password and a code.                                |
 | `POST /v1/auth/recovery`            | Uses a recovery code. The session may then enroll a factor and do nothing else. |
 | `POST /v1/recover/request`          | Starts a recovery with an email. Always 202. A delay starts and the owner receives a cancel token. |
 | `POST /v1/recover/cancel`           | Cancels the open request with the cancel token. 204.                     |
 | `POST /v1/recover/claim`            | Emails the grant token for an approved request. Always 202.              |
 | `POST /v1/recover/grant`            | Uses the grant token. The session may then enroll a factor and do nothing else. |
-| `GET /v1/sessions`                  | Lists the logged-in sessions of the account: `session_xid`, `country`, `created_at`, `last_seen_at` and `current`. |
-| `DELETE /v1/sessions/{session_xid}` | Ends another session of the account. Needs a fresh login. 404 `NOT_FOUND_DEVICE` for a session of another account, 400 `NO_PARAM_SESSION_XID` without an identifier. |
+| `GET /v1/sessions`                  | Lists the logged-in sessions of the user: `session_xid`, `country`, `created_at`, `last_seen_at` and `current`. |
+| `DELETE /v1/sessions/{session_xid}` | Ends another session of the user. Needs a fresh login. 404 `NOT_FOUND_DEVICE` for a session of another user, 400 `NO_PARAM_SESSION_XID` without an identifier. |
+| `POST /v1/accounts`            | Adds one account (a link or a secret) or all the accounts of a Google Authenticator export. Needs a fresh login. |
+| `GET /v1/accounts`             | Lists the accounts with their current codes.                             |
+| `DELETE /v1/accounts/{account_xid}` | Removes an account and its secret. Needs a fresh login.   |
 | `GET /v1/passkeys`                  | Lists the passkeys, without key material.                                |
 | `POST /v1/passkeys/{passkey_xid}/removal`, `/confirm` | Removes a passkey after a fresh passkey assertion whose challenge is bound to the removal. The last factor cannot be removed. |
-| `GET /v1/account/export`            | Exports the personal data of the account. Needs a fresh login.           |
-| `POST /v1/account/deletion`, `/confirm` | Deletes the account and its data. Needs a fresh login and, for an account with a passkey, a passkey assertion bound to the deletion. |
+| `GET /v1/user/export`            | Exports the personal data of the user. Needs a fresh login.           |
+| `POST /v1/user/deletion`, `/confirm` | Deletes the user and its data. Needs a fresh login and, for a user with a passkey, a passkey assertion bound to the deletion. |
 | `DELETE /v1/totp`                   | Removes the code generator.                                              |
 
-Recovering an account that lost every factor and every code needs a person. The delay is `-recovery-delay`, 72 hours by
+Recovering access for a user who lost every factor and every code needs a person. The delay is `-recovery-delay`, 72 hours by
 default, and the stand uses the default:
 
 ```shell
@@ -163,7 +166,7 @@ ones that change.
 The mail client uses TLS 1.2 or newer with the system roots, and it never skips the certificate check. Plain SMTP is
 only for local stands such as Mailpit. The operator must choose a real mail provider.
 
-The server counts requests for each address (60 a minute), for each account (20 a minute) and for the whole service (500
+The server counts requests for each address (60 a minute), for each user (20 a minute) and for the whole service (500
 a second). Opening sessions has its own limit of 20 a minute for each address.
 
 With `-metrics=:9090`, the server serves `GET /metrics` on a separate listener. The stand turns it on and does not
@@ -202,13 +205,19 @@ every request with this key. A tab keeps its session identifier in `sessionStora
 So a reload finds the session again, and several tabs that use one key hold several sessions. When a session has ended,
 the page opens a new one with the same key.
 
-The Account screen has a Devices panel that lists the sessions and ends another one. A login without an email uses a
-passkey that the browser finds by itself. A sensitive action that needs a fresh login asks for the passkey again on the
-same session. Removing a passkey asks for a passkey assertion that is bound to that removal.
+The screen of a logged-in user has a header and three tabs. The header shows the login decision and the prompt for a
+fresh login, and it has the Log out button. The **Codes** tab opens first and holds the authenticator: the one-time codes
+of the accounts of other services. The **Security** tab holds the passkeys, the authenticator app for the login, the
+recovery codes and the Devices panel, which lists the sessions and ends another one. The **Data** tab shows the session
+and has the download and the deletion of the data.
+
+A login without an email uses a passkey that the browser finds by itself. A sensitive action that needs a fresh login
+asks for the passkey again on the same session. Removing a passkey asks for a passkey assertion that is bound to that
+removal.
 
 The screens follow the flags of the session. A guest can log in, register or recover. A verified registration or a
-recovery code can add the first factor. A logged-in session manages its passkeys, its authenticator app and its recovery
-codes.
+recovery code can add the first factor. A logged-in session shows its codes and manages its passkeys, its authenticator app, its
+recovery codes and its data.
 
 `make frontend-dev` runs the Vite server on `:3000` and passes `/v1` to a backend on `:8080`. Its origin,
 `http://localhost:3000`, is in the default `ORIGINS` of the stand.

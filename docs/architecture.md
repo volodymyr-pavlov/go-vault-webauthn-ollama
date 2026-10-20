@@ -32,9 +32,9 @@ the Authorized bit.
 A session ends when someone revokes it, after the idle timeout (`-session-idle`, 7 days by default) or after the
 absolute lifetime of 30 days. The session middleware records `last_seen_at` at most every 5 minutes.
 
-`GET /v1/sessions` lists the logged-in sessions of the account. Each entry has an identifier, a country, a creation time,
+`GET /v1/sessions` lists the logged-in sessions of the user. Each entry has an identifier, a country, a creation time,
 a last-use time and a `current` mark. `DELETE /v1/sessions/{session_xid}` ends another session. It needs a fresh login,
-and it answers 404 `NOT_FOUND_DEVICE` for a session of another account. The Account screen shows this list as the
+and it answers 404 `NOT_FOUND_DEVICE` for a session of another user. The Security tab of the User screen shows this list as the
 Devices panel.
 
 An hourly job deletes the sessions that expired more than `-session-retention` ago (90 days by default). This period is
@@ -45,14 +45,14 @@ must not have. A middleware checks the permission before the handler runs, so a 
 
 ## The policy
 
-- An account without a passkey logs in with a password and then a TOTP code. It needs both.
-- An account with at least one passkey logs in with a passkey only. User verification is required. The service refuses
-  the password and the code for this account, so a phished password cannot downgrade the login. A disabled passkey still
+- A user without a passkey logs in with a password and then a TOTP code. It needs both.
+- A user with at least one passkey logs in with a passkey only. User verification is required. The service refuses
+  the password and the code for this user, so a phished password cannot downgrade the login. A disabled passkey still
   counts as a passkey.
 - Adding or removing a factor needs the last factor within five minutes. The last factor cannot be removed.
 - Removing a passkey also needs a fresh passkey assertion. The challenge is the SHA-256 hash of a domain string, 32
   random bytes, the action and the passkey. It works once, for two minutes, and for this passkey only.
-- A registration is finished with a single-use token that arrives outside the service. Until then, the account cannot
+- A registration is finished with a single-use token that arrives outside the service. Until then, the user cannot
   log in.
 
 ## The parts
@@ -77,12 +77,33 @@ must not have. A middleware checks the permission before the handler runs, so a 
 | `cmd/recovery`     | The command of the operator. It lists the open recovery requests and approves one.                             |
 | `metrics`          | The Prometheus series, and the wrapper that counts the requests, the limits and the decisions.                 |
 
-## Six tables
+## The authenticator
+
+The Codes tab of the User screen can replace an authenticator app. A user keeps the TOTP accounts of other services there, such as
+GitHub or a bank, and the page shows their codes.
+
+- **Adding.** The user pastes an `otpauth://` link, an `otpauth-migration://` export of Google Authenticator, or a Base32
+  secret, chooses a picture with a QR code, or points the camera at one. The page reads QR codes in the browser (jsQR). The camera needs a secure page (HTTPS or localhost) and
+  `camera=(self)` in the `Permissions-Policy` header of the page. A test starts the scan with a fake camera, but no test
+  points a real camera at a code.
+  The backend reads the link (`totp.ParseURI`), refuses what it cannot import, and skips counter-based (HOTP) entries.
+  Adding needs a fresh login, and one user can keep 50 accounts.
+- **Where the secrets are.** Each secret is a key in the TOTP engine of Vault. Vault makes the codes, so the secret never
+  comes back out, and the policy lets the backend neither read a key nor list the keys. MySQL keeps only the issuer, the
+  name, the parameters and the name of the Vault key (`accounts`).
+- **Two systems.** Vault and MySQL cannot share a transaction. An addition creates the Vault keys first, then stores the
+  rows in one transaction that locks the user, and deletes the keys again if the rows do not commit. A removal deletes
+  the key first and then the row, and a repeat of a failed removal is safe. Deleting the user deletes the keys before
+  the transaction.
+- **Codes.** `GET /v1/accounts` asks Vault for the code of each account and returns the seconds that are left. The
+  page counts down and asks again when a code runs out.
+
+## Seven tables
 
 A user row holds the password hash and the TOTP ciphertext. A passkey row is one credential. A recovery code row is the
 keyed hash of one single-use code. A recovery request (`recovery_requests`) is one attempt of a user without any factor
 to get back in. It holds the SHA-256 of the cancel token, the SHA-256 and the expiry of the grant token, and the time
-when the delay ends. A session row is the sign-in of one device. The sixth table, `http_requests`, is the request log; see below.
+when the delay ends. A session row is the sign-in of one device. An account row is one TOTP account of another service; see above. The seventh table, `http_requests`, is the request log; see below.
 
 Each table has one `flags bigint unsigned` column for all of its state. Each row has an internal key that never leaves
 the service, and an external snowflake identifier that the API and the logs carry.
@@ -134,26 +155,26 @@ request matches nothing and gets the same plain refusal as a bad signature.
 The handler checks the WebAuthn response after it has used up the challenge. A bad response costs the client a new
 challenge. This order makes a replay impossible, not only unlikely.
 
-## Recovery of a lost account
+## Recovery of lost access
 
 An email alone cannot let in a user who lost every factor and every recovery code. The flow adds a delay and a person.
 
 1. `POST /v1/recover/request` creates a row in `recovery_requests`, with `ready_at` set to the end of the delay (72
    hours by default, `-recovery-delay`). It emails a cancel token to the owner. The answer is always 202. Only a
-   verified, enabled account with no open request gets a row.
+   verified, enabled user with no open request gets a row.
 2. `POST /v1/recover/cancel` closes the open request that has the token. The token works once. A login with a passkey,
-   with a password and a code, or with a recovery code also closes the open request of the account.
+   with a password and a code, or with a recovery code also closes the open request of the user.
 3. The operator runs `recovery list` and `recovery approve XID` (`make recovery-list`, `make recovery-approve XID=n`).
    The update that approves matches only an open request whose `ready_at` has passed, so it fails before the delay
    ends. The `recovery` command talks to MySQL directly and has no API.
 4. `POST /v1/recover/claim` always answers 202. Only for an approved request, it stores the hash of a new grant token and
    emails the token. The grant works for one hour.
 5. `POST /v1/recover/grant` uses up the grant in one statement, so it works only once. It revokes every other session of
-   the account, puts the session in the recovery-approved state and sends a notice to the owner. The session can enroll
+   the user, puts the session in the recovery-approved state and sends a notice to the owner. The session can enroll
    a factor and do nothing else, as after a recovery code. A wrong, used or expired grant gives 401 and counts as a
    failure of the session.
 
-The four endpoints need only a started session. The request and the claim have a rate limit for each account, like
+The four endpoints need only a started session. The request and the claim have a rate limit for each user, like
 registration.
 
 ## Vault
@@ -161,8 +182,9 @@ registration.
 The service logs in with AppRole. The init job gives it a wrapped secret ID, which is a token that can be unwrapped only
 once. The backend unwraps it at start-up, so no secret stays in a file.
 
-Vault holds two keys, `totp` and `mac`, and the policy has four paths. The service can encrypt, decrypt and rewrap with
-the TOTP key, and it can make an HMAC with the MAC key. It cannot export, back up, rotate, configure or read any key.
+Vault holds two Transit keys, `totp` and `mac`, and a TOTP engine, `authenticator`. The policy has six paths. The service
+can encrypt, decrypt and rewrap with the TOTP key, and it can make an HMAC with the MAC key. In the TOTP engine, it can
+create and delete keys and read the code of a key. It cannot export, back up, rotate, configure or read any key.
 Vault is not on the path of a request signature, because the check uses the public key of the device from the session
 row.
 
@@ -237,7 +259,7 @@ an operator applies. The keys then survive a restart, and nothing is wiped.
   the script can still ask the browser to sign while the page is open.
 - A session ends after 7 days without use (`-session-idle`) or after 30 days, and there is no refresh. Then the device
   opens a new session with a login.
-- Rate limits: 60 requests a minute for each address, 20 a minute for each account, 500 a second for the whole service,
+- Rate limits: 60 requests a minute for each address, 20 a minute for each user, 500 a second for the whole service,
   and 20 new sessions a minute for each address.
 - By default, the mail client sends plain SMTP, which is only for local stands. `-smtp-starttls` or `-smtp-implicit-tls`
   (not both) turns on TLS, together with `-smtp-user`, `-smtp-password-file` and `-smtp-tls-server-name`. The client

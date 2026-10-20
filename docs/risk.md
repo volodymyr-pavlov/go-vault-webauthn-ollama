@@ -9,14 +9,14 @@ stricter decision, but it can never argue for a looser one.
 | ------------------------------------- | --------------------------- |
 | A new device                          | 25                          |
 | A factor enrolled within a day        | 15                          |
-| Failed attempts in the last ten minutes, of the account or from the address | 5 each, up to 25 |
+| Failed attempts in the last ten minutes, of the user or from the address | 5 each, up to 25 |
 | Wrong codes since the last good one   | 5 each, up to 15            |
-| An unusual hour for the account       | 10                          |
+| An unusual hour for the user       | 10                          |
 | An impossible travel since the last login | 40                      |
-| A shared address: at least 5 different accounts tried the same address in the last hour | 10 |
+| A shared address: at least 5 different users tried the same address in the last hour | 10 |
 
 The signals come from the sessions of the user, which form the login history, and from the user row. The service counts
-a new device only after the account has logged in once. The passkey and TOTP login handlers compute the shared address
+a new device only after the user has logged in once. The passkey and TOTP login handlers compute the shared address
 from the sessions of the address. Credential stuffing sets this signal, and so does an office or a mobile carrier. The
 score is capped at 100.
 

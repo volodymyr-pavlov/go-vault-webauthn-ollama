@@ -43,7 +43,10 @@ The project is an exercise. It asks how much of this a small service can do with
   token.
 - **Score each login.** Rules turn the signals (a new device, an odd hour, an impossible trip) into a score from 0 to
     100. The model can only raise the level of the decision.
-- **Recover an account.** Recovery codes come first. After that, a request with a delay and the approval of an operator.
+- **Recover access.** Recovery codes come first. After that, a request with a delay and the approval of an operator.
+- **Replace an authenticator app.** Keep the TOTP accounts of other services in the service. Paste an otpauth link, scan
+  a QR code or import a Google Authenticator export. Vault stores the secrets and makes the codes, so a secret never
+  leaves Vault.
 - **Run as a cluster.** Two backends, Vault on Raft, MySQL with a replica, and Redis with Sentinel.
 
 ## How it is built

@@ -22,9 +22,9 @@ every call.
 
 The service stores the last time step that it accepted for each user. It refuses a code from that step or an earlier
 one, so a code works only once. The accepted window is one step in either direction, and the comparison takes the same
-time for every input. Each account has a budget of twenty tries a minute in Redis, with a delay that grows. Each
+time for every input. Each user has a budget of twenty tries a minute in Redis, with a delay that grows. Each
 address and the whole service have budgets too. Opening a session has its own budget of 20 a minute for each address.
-The service never locks an account, so an attacker cannot keep the real owner out.
+The service never locks a user, so an attacker cannot keep the real owner out.
 
 ## (d) How a stolen or replayed request is stopped, and how the TOTP key rotates
 
@@ -41,7 +41,7 @@ rotates the TOTP key and rewraps every stored secret inside Vault, so nobody is 
 
 ## (e) What an attacker targets when recovery or enrollment is weak
 
-The attacker adds a factor of their own, or resets the account through a channel that is weaker than the factors. In
+The attacker adds a factor of their own, or resets the user through a channel that is weaker than the factors. In
 this service, adding or removing a factor needs an existing factor within the last five minutes. A recovery code is
 single-use, has 80 bits and is stored as a keyed hash. It lets the session enroll one factor, and it does not log the
 user in. Every change sends a notice to the user. The service has no reset by email alone.
@@ -73,7 +73,7 @@ often controls the email account. With an email-only reset, every passkey would 
 The flow runs in the backend:
 
 1. The user asks for recovery with the email (`POST /v1/recover/request`). The answer is always 202, so it does not show
-   whether the account exists. If the account is verified and enabled and has no open request, the service stores a
+   whether the user exists. If the user is verified and enabled and has no open request, the service stores a
    request and emails the owner a notice with a single-use cancel token.
 2. The request waits for the delay, which is 72 hours by default (`-recovery-delay`). The owner can cancel the request at
    any time with the token (`POST /v1/recover/cancel`). A login with any factor, or with a recovery code, cancels it
@@ -83,7 +83,7 @@ The flow runs in the backend:
    check can be a phone call or a video call.
 4. The owner claims the approved request (`POST /v1/recover/claim`). The answer is always 202. Only for an approved
    request, the service emails a single-use grant token that works for one hour.
-5. The owner sends the grant (`POST /v1/recover/grant`). The service revokes every other session of the account, puts
+5. The owner sends the grant (`POST /v1/recover/grant`). The service revokes every other session of the user, puts
    the current session in the recovery-approved state, and sends a notice to the owner. This session can enroll a new
    factor and do nothing else.
 

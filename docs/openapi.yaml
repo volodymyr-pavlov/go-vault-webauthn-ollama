@@ -3,8 +3,8 @@ info:
   title: Vault Login
   version: 1.0.0
   description: |
-    The login service: passkeys for every account that has one, password with a TOTP code for the others, recovery
-    codes, a delayed and approved recovery for an account that lost everything, sessions bound to a device key, and a risk decision on every login.
+    The login service: passkeys for every user that has one, password with a TOTP code for the others, recovery
+    codes, a delayed and approved recovery for a user that lost everything, sessions bound to a device key, and a risk decision on every login.
 
     Every flow starts with a session (POST /v1/session). The body carries the Ed25519 public key of the device as
     `device_key`. The service stores it with its key ID, the base64url SHA-256 of the 32 key bytes. There is no token and
@@ -176,7 +176,7 @@ paths:
               properties:
                 token: { type: string, description: 64 hex digits. }
       responses:
-        '200': { description: The account is verified; the session may enroll a factor. }
+        '200': { description: The user is verified; the session may enroll a factor. }
         '401': { $ref: '#/components/responses/Refused' }
   /v1/enroll/passkey:
     post:
@@ -240,7 +240,7 @@ paths:
       summary: Begin a login with a passkey.
       description: |
         With an email, the options list credentials for a known and an unknown address alike. Without an email, the login
-        is discoverable: the options list no credentials and the passkey names the account in its response.
+        is discoverable: the options list no credentials and the passkey names the user in its response.
       requestBody:
         required: true
         content:
@@ -284,7 +284,7 @@ paths:
         '403': { description: The risk engine refused the login (RISK_DENIED). }
   /v1/auth/password:
     post:
-      summary: The password step of an account without a passkey.
+      summary: The password step of a user without a passkey.
       requestBody:
         required: true
         content:
@@ -346,12 +346,12 @@ paths:
         '401': { $ref: '#/components/responses/Refused' }
   /v1/recover/request:
     post:
-      summary: Start the recovery of an account that lost every factor and every recovery code.
+      summary: Start the recovery of a user that lost every factor and every recovery code.
       description: |
         Needs a started session. Always responds with 202 and the same body, so the response does not show whether the
-        account exists. For a verified, enabled account with no open request, the service stores a request that waits
+        user exists. For a verified, enabled user with no open request, the service stores a request that waits
         for the recovery delay (`-recovery-delay`, 72 hours by default) and mails the owner a single-use cancel token.
-        The request is rate limited per account. An operator must approve it after the delay, outside the API.
+        The request is rate limited per user. An operator must approve it after the delay, outside the API.
       requestBody:
         required: true
         content:
@@ -396,7 +396,7 @@ paths:
       description: |
         Needs a started session. Always responds with 202 and the same body. Only for a request that an operator
         approved, the service mails a single-use grant token that works for one hour. The request is rate limited per
-        account.
+        user.
       requestBody:
         required: true
         content:
@@ -422,7 +422,7 @@ paths:
     post:
       summary: Use the grant token; the session may then enroll a factor, and nothing else.
       description: |
-        Needs a started session. The service revokes every other session of the account, gives this session the
+        Needs a started session. The service revokes every other session of the user, gives this session the
         recovery-approved state and notifies the owner. A wrong, used or expired token is refused, and the refusal adds
         one to the failure count of the session.
       requestBody:
@@ -447,7 +447,7 @@ paths:
         '401': { description: The token is wrong, used or expired (AUTHENTICATION_FAILED). }
   /v1/sessions:
     get:
-      summary: The logged-in sessions of the account, newest first.
+      summary: The logged-in sessions of the user, newest first.
       description: A session that is not authorized, is revoked or is past the idle timeout is not listed.
       responses:
         '200':
@@ -466,8 +466,8 @@ paths:
         '401': { $ref: '#/components/responses/Refused' }
   /v1/sessions/{session_xid}:
     delete:
-      summary: End another session of the account. Needs a fresh login.
-      description: Responds with NOT_FOUND_DEVICE for a session of another account.
+      summary: End another session of the user. Needs a fresh login.
+      description: Responds with NOT_FOUND_DEVICE for a session of another user.
       parameters:
         - name: session_xid
           in: path
@@ -477,10 +477,10 @@ paths:
         '204': { description: The session is revoked. }
         '400': { description: The identifier is missing or not a number (NO_PARAM_SESSION_XID). }
         '401': { $ref: '#/components/responses/Refused' }
-        '404': { description: The account has no such session (NOT_FOUND_DEVICE). }
+        '404': { description: The user has no such session (NOT_FOUND_DEVICE). }
   /v1/passkeys:
     get:
-      summary: The passkeys of the account, without key material.
+      summary: The passkeys of the user, without key material.
       responses:
         '200': { description: The list. }
         '401': { $ref: '#/components/responses/Refused' }
@@ -526,27 +526,71 @@ paths:
         '401': { $ref: '#/components/responses/Refused' }
         '403': { $ref: '#/components/responses/Refused' }
         '404': { $ref: '#/components/responses/Refused' }
-  /v1/account/export:
+  /v1/accounts:
     get:
-      summary: Export the personal data of the account. Needs a fresh login.
+      summary: List the accounts of the authenticator with their current codes.
+      description: >
+        An account is a TOTP account of another service. Vault makes the codes. The answer holds no secret. `valid_for`
+        is the number of seconds that a code lasts.
+      responses:
+        '200': { description: The accounts. }
+        '401': { $ref: '#/components/responses/Refused' }
+    post:
+      summary: Add accounts to the authenticator. Needs a fresh login.
+      description: >
+        Send either `uri` (an `otpauth://totp/...` link or an `otpauth-migration://offline?data=...` export of Google
+        Authenticator) or `secret` (Base32) with an optional `issuer` and `label`. A counter-based entry of an export
+        is skipped and counted in `skipped`. The secrets go to the TOTP engine of Vault and never come back. A user can
+        keep 50 accounts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                uri: { type: string }
+                secret: { type: string }
+                issuer: { type: string }
+                label: { type: string }
+      responses:
+        '201': { description: The accounts that were added and the number that were skipped. }
+        '400': { $ref: '#/components/responses/Refused' }
+        '401': { $ref: '#/components/responses/Refused' }
+        '409': { $ref: '#/components/responses/Refused' }
+  /v1/accounts/{account_xid}:
+    delete:
+      summary: Remove an account and its secret. Needs a fresh login.
+      parameters:
+        - name: account_xid
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Removed. }
+        '401': { $ref: '#/components/responses/Refused' }
+        '404': { $ref: '#/components/responses/Refused' }
+  /v1/user/export:
+    get:
+      summary: Export the personal data of the user. Needs a fresh login.
       description: >
         Returns the email, the names of the passkeys, the sessions with their address and the newest 1000 rows of the
         request log of the user. It returns no password hash, no TOTP secret, no recovery code and no public key.
       responses:
         '200': { description: The export. }
         '401': { $ref: '#/components/responses/Refused' }
-  /v1/account/deletion:
+  /v1/user/deletion:
     post:
-      summary: Start the deletion of the account. Needs a fresh login.
+      summary: Start the deletion of the user. Needs a fresh login.
       description: >
-        If the account has a usable passkey, the answer is `{"method":"passkey","options":{...}}` with request options
+        If the user has a usable passkey, the answer is `{"method":"passkey","options":{...}}` with request options
         whose challenge is bound to the deletion and to the user. Otherwise it is `{"method":"fresh_login"}`.
       responses:
         '200': { description: The method and, for a passkey, the request options. }
         '401': { $ref: '#/components/responses/Refused' }
-  /v1/account/deletion/confirm:
+  /v1/user/deletion/confirm:
     post:
-      summary: Delete the account. Needs a fresh login and, for an account with a passkey, a fresh assertion.
+      summary: Delete the user. Needs a fresh login and, for a user with a passkey, a fresh assertion.
       description: >
         One transaction deletes the user, the passkeys, the recovery codes, the recovery requests and the sessions, and
         removes the user, the address and the user agent from the request log rows of the user. A missing, expired or
@@ -558,7 +602,7 @@ paths:
             schema:
               type: object
               properties:
-                response: { type: object, description: The assertion. Needed only when the account has a passkey. }
+                response: { type: object, description: The assertion. Needed only when the user has a passkey. }
       responses:
         '204': { description: Deleted. }
         '401': { $ref: '#/components/responses/Refused' }
