@@ -1,0 +1,571 @@
+openapi: 3.1.0
+info:
+  title: Vault Login
+  version: 1.0.0
+  description: |
+    The login service: passkeys for every account that has one, password with a TOTP code for the others, recovery
+    codes, a delayed and approved recovery for an account that lost everything, sessions bound to a device key, and a risk decision on every login.
+
+    Every flow starts with a session (POST /v1/session). The body carries the Ed25519 public key of the device as
+    `device_key`. The service stores it with its key ID, the base64url SHA-256 of the 32 key bytes. There is no token and
+    no refresh: the key is the identity.
+
+    Every other request is signed under RFC 9421 and carries the digest of its body under RFC 9530, in three fields.
+    `Content-Digest` is `sha-256=:<base64>:` of the body. `Signature-Input` is
+    `sig=("@method" "@path" "content-digest");created=<Unix seconds>;keyid="<key ID>";alg="ed25519";nonce="<nonce>";tag="<session_xid>"`.
+    The signed parameters are `created`, `keyid`, `alg`, `nonce` and `tag`. `POST /v1/session` signs without `tag`,
+    because no session exists yet. `Signature` is `sig=:<base64 of the Ed25519 signature>:`. The server reads the
+    session named by `tag`, checks that the key ID belongs to it, and checks the signature with the key of that
+    session. One key can hold many sessions, one for each browser tab. The server refuses a `created` more than one
+    minute from the time of the server (401 STALE_REQUEST_TIME, with `params.server_time` in Unix seconds), a nonce
+    that the key used before (remembered for two minutes), and any request with a query string. A session that is
+    revoked, or idle for longer than `-session-idle`, is refused on every request. Opening a session is limited to 20 a
+    minute for each address.
+
+    Each step that passes sets a bit of the session's flags, and each endpoint says which bits it needs. Every response
+    is an envelope with `data` or `error`; an error has a stable `num` and `code`. Refusals of a factor are always 401
+    AUTHENTICATION_FAILED whatever the reason, and the endpoints that take an address respond the same for a known and
+    an unknown one.
+servers:
+  - url: http://localhost:8080
+security:
+  - signature: []
+components:
+  securitySchemes:
+    signature:
+      type: apiKey
+      in: header
+      name: Signature
+      description: |
+        The signature of the request, `sig=:<base64>:`. It goes with the `Content-Digest` and `Signature-Input` fields
+        that the description of the API explains. All three are required.
+  schemas:
+    Error:
+      type: object
+      properties:
+        status: { type: integer }
+        num: { type: integer, description: The stable number of the refusal. }
+        code: { type: string, description: The stable code of the refusal. }
+        message: { type: string }
+        params: { type: object, additionalProperties: true }
+    Refusal:
+      type: object
+      properties:
+        error: { $ref: '#/components/schemas/Error' }
+    SessionResult:
+      type: object
+      properties:
+        session_xid: { type: string, description: The identifier of the session, a decimal string. }
+        expires_at: { type: string, format: date-time, description: When the session ends. }
+    Authorized:
+      type: object
+      properties:
+        flags: { type: integer, description: The bits of the session. }
+        decision: { type: string, enum: [allow, limit, review] }
+        user_xid: { type: string }
+    Device:
+      type: object
+      properties:
+        session_xid: { type: string, description: The identifier of the session, a decimal string. }
+        country: { type: string, description: The country of the address that opened the session. }
+        created_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        current: { type: boolean, description: True for the session that made the request. }
+    RecoveryStatus:
+      type: object
+      properties:
+        flags: { type: integer, description: The flag bits of the session. The call leaves them as they are. }
+    SessionFlags:
+      type: object
+      properties:
+        flags: { type: integer, description: The flag bits of the session after the step. }
+    WebAuthnOptions:
+      type: object
+      description: The options of the browser API, as `navigator.credentials.create` or `.get` takes them.
+      additionalProperties: true
+    WebAuthnResponse:
+      type: object
+      description: The credential the browser returns, serialised with `toJSON()`.
+      additionalProperties: true
+  responses:
+    Refused:
+      description: A refusal.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Refusal' }
+paths:
+  /healthz:
+    get:
+      security: []
+      summary: The service is up.
+      responses:
+        '200': { description: ok }
+  /v1/session:
+    post:
+      security: []
+      summary: Open a session for a device.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_id, device_key]
+              properties:
+                device_id: { type: string, maxLength: 128, description: An identifier the client keeps per device; stored as a keyed hash. }
+                device_key: { type: string, description: The Ed25519 public key of the device, 32 bytes in base64. The request is signed with the private key. }
+      responses:
+        '201':
+          description: The session.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/SessionResult' }
+        '400': { $ref: '#/components/responses/Refused' }
+        '429': { description: 'Too many sessions from this address: 20 a minute (TOO_MANY_REQUESTS).' }
+    get:
+      summary: The state of the session.
+      responses:
+        '200': { description: The flags, the user and the risk score. }
+        '401': { $ref: '#/components/responses/Refused' }
+    delete:
+      summary: Log out; the session is revoked for good.
+      responses:
+        '204': { description: Revoked. }
+        '401': { $ref: '#/components/responses/Refused' }
+  /v1/register:
+    post:
+      summary: Begin a registration. Needs a session with no step passed yet.
+      description: Responds with 202 for a new address and for a taken one alike. The verification token leaves out of band.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, maxLength: 254 }
+                password: { type: string, minLength: 10, maxLength: 1024 }
+      responses:
+        '202':
+          description: Pending. The flag bits of the session include RegistryBegun.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      flags: { type: integer, description: The flag bits of the session after the step. }
+        '400': { $ref: '#/components/responses/Refused' }
+        '401': { $ref: '#/components/responses/Refused' }
+  /v1/register/complete:
+    post:
+      summary: Verify the registration with the token delivered out of band.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, description: 64 hex digits. }
+      responses:
+        '200': { description: The account is verified; the session may enroll a factor. }
+        '401': { $ref: '#/components/responses/Refused' }
+  /v1/enroll/passkey:
+    post:
+      summary: Begin the registration of a passkey.
+      description: Needs a verified registration, an accepted recovery code, or an authorized session with a fresh factor.
+      responses:
+        '200':
+          description: The creation options for the browser.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/WebAuthnOptions' }
+        '401': { $ref: '#/components/responses/Refused' }
+  /v1/enroll/passkey/complete:
+    post:
+      summary: Finish the registration of a passkey.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, response]
+              properties:
+                name: { type: string, maxLength: 64 }
+                response: { $ref: '#/components/schemas/WebAuthnResponse' }
+      responses:
+        '201': { description: The passkey_xid of the new passkey. }
+        '401': { $ref: '#/components/responses/Refused' }
+  /v1/enroll/totp:
+    post:
+      summary: Begin the enrollment of a code generator; the secret is shown once.
+      responses:
+        '200': { description: The secret in base32 and the otpauth URI. }
+        '403': { $ref: '#/components/responses/Refused' }
+  /v1/enroll/totp/complete:
+    post:
+      summary: Confirm the code generator with its first valid code.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '204': { description: Confirmed. }
+        '401': { $ref: '#/components/responses/Refused' }
+  /v1/enroll/recovery:
+    post:
+      summary: Issue a new set of recovery codes, shown once; the earlier set stops working.
+      responses:
+        '200': { description: Eight codes of 80 bits each. }
+        '401': { $ref: '#/components/responses/Refused' }
+  /v1/auth/passkey:
+    post:
+      summary: Begin a login with a passkey.
+      description: |
+        With an email, the options list credentials for a known and an unknown address alike. Without an email, the login
+        is discoverable: the options list no credentials and the passkey names the account in its response.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, description: Optional. }
+      responses:
+        '200':
+          description: The request options for the browser.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/WebAuthnOptions' }
+        '429': { $ref: '#/components/responses/Refused' }
+  /v1/auth/passkey/complete:
+    post:
+      summary: Finish the login with the assertion.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [response]
+              properties:
+                response: { $ref: '#/components/schemas/WebAuthnResponse' }
+      responses:
+        '200':
+          description: The session is authorized, limited or flagged.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Authorized' }
+        '401': { $ref: '#/components/responses/Refused' }
+        '403': { description: The risk engine refused the login (RISK_DENIED). }
+  /v1/auth/password:
+    post:
+      summary: The password step of an account without a passkey.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        '200':
+          description: The flag bits of the session include PasswordApproved; the login waits for the TOTP code.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/SessionFlags' }
+        '401': { $ref: '#/components/responses/Refused' }
+  /v1/auth/totp:
+    post:
+      summary: The code step, after the password.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '200':
+          description: The session is authorized, limited or flagged.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Authorized' }
+        '401': { $ref: '#/components/responses/Refused' }
+        '403': { description: The risk engine refused the login (RISK_DENIED). }
+  /v1/auth/recovery:
+    post:
+      summary: Use a recovery code; the session may then enroll a factor, and nothing else.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, code]
+              properties:
+                email: { type: string }
+                code: { type: string, description: 16 base32 characters. }
+      responses:
+        '200': { description: The flag bits of the session include RecoveryApproved; the session may enroll a factor. }
+        '401': { $ref: '#/components/responses/Refused' }
+  /v1/recover/request:
+    post:
+      summary: Start the recovery of an account that lost every factor and every recovery code.
+      description: |
+        Needs a started session. Always responds with 202 and the same body, so the response does not show whether the
+        account exists. For a verified, enabled account with no open request, the service stores a request that waits
+        for the recovery delay (`-recovery-delay`, 72 hours by default) and mails the owner a single-use cancel token.
+        The request is rate limited per account. An operator must approve it after the delay, outside the API.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, maxLength: 254 }
+      responses:
+        '202':
+          description: Pending.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/RecoveryStatus' }
+        '400': { $ref: '#/components/responses/Refused' }
+        '401': { $ref: '#/components/responses/Refused' }
+        '429': { $ref: '#/components/responses/Refused' }
+  /v1/recover/cancel:
+    post:
+      summary: Cancel the open recovery request with the cancel token from the notice.
+      description: Needs a started session. The token works once. A login with a factor or a recovery code also cancels the open request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, description: 64 hex digits. }
+      responses:
+        '204': { description: The request is cancelled. }
+        '400': { $ref: '#/components/responses/Refused' }
+        '401': { description: The token is wrong or used (AUTHENTICATION_FAILED). }
+  /v1/recover/claim:
+    post:
+      summary: Claim an approved recovery request.
+      description: |
+        Needs a started session. Always responds with 202 and the same body. Only for a request that an operator
+        approved, the service mails a single-use grant token that works for one hour. The request is rate limited per
+        account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, maxLength: 254 }
+      responses:
+        '202':
+          description: Pending.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/RecoveryStatus' }
+        '400': { $ref: '#/components/responses/Refused' }
+        '401': { $ref: '#/components/responses/Refused' }
+        '429': { $ref: '#/components/responses/Refused' }
+  /v1/recover/grant:
+    post:
+      summary: Use the grant token; the session may then enroll a factor, and nothing else.
+      description: |
+        Needs a started session. The service revokes every other session of the account, gives this session the
+        recovery-approved state and notifies the owner. A wrong, used or expired token is refused, and the refusal adds
+        one to the failure count of the session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, description: 64 hex digits. }
+      responses:
+        '200':
+          description: The flag bits of the session include RecoveryApproved; the session may enroll a factor.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/SessionFlags' }
+        '400': { $ref: '#/components/responses/Refused' }
+        '401': { description: The token is wrong, used or expired (AUTHENTICATION_FAILED). }
+  /v1/sessions:
+    get:
+      summary: The logged-in sessions of the account, newest first.
+      description: A session that is not authorized, is revoked or is past the idle timeout is not listed.
+      responses:
+        '200':
+          description: The sessions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      sessions:
+                        type: array
+                        items: { $ref: '#/components/schemas/Device' }
+        '401': { $ref: '#/components/responses/Refused' }
+  /v1/sessions/{session_xid}:
+    delete:
+      summary: End another session of the account. Needs a fresh login.
+      description: Responds with NOT_FOUND_DEVICE for a session of another account.
+      parameters:
+        - name: session_xid
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: The session is revoked. }
+        '400': { description: The identifier is missing or not a number (NO_PARAM_SESSION_XID). }
+        '401': { $ref: '#/components/responses/Refused' }
+        '404': { description: The account has no such session (NOT_FOUND_DEVICE). }
+  /v1/passkeys:
+    get:
+      summary: The passkeys of the account, without key material.
+      responses:
+        '200': { description: The list. }
+        '401': { $ref: '#/components/responses/Refused' }
+  /v1/passkeys/{passkey_xid}/removal:
+    post:
+      summary: Start the removal of a passkey. Needs a fresh factor.
+      description: >
+        Returns the request options for the browser. Their challenge is the SHA-256 hash of a domain string, 32 random
+        bytes, the action `remove_passkey` and the XID of the passkey, so the assertion that a passkey signs covers the
+        action and the passkey. The session keeps the state of the ceremony for two minutes.
+      parameters:
+        - name: passkey_xid
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: The request options for navigator.credentials.get. }
+        '401': { $ref: '#/components/responses/Refused' }
+        '404': { $ref: '#/components/responses/Refused' }
+  /v1/passkeys/{passkey_xid}/removal/confirm:
+    post:
+      summary: Confirm the removal with a fresh passkey assertion. The last factor cannot be removed.
+      description: >
+        Verifies the assertion against the challenge of this removal, with user verification required, and removes the
+        passkey. The challenge works once, for this passkey only. A missing, expired, reused or foreign challenge, and an
+        assertion that does not verify, all give 401 AUTHENTICATION_FAILED and use the challenge up.
+      parameters:
+        - name: passkey_xid
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [response]
+              properties:
+                response: { type: object, description: The assertion that the browser returned, as JSON. }
+      responses:
+        '204': { description: Removed. }
+        '401': { $ref: '#/components/responses/Refused' }
+        '403': { $ref: '#/components/responses/Refused' }
+        '404': { $ref: '#/components/responses/Refused' }
+  /v1/account/export:
+    get:
+      summary: Export the personal data of the account. Needs a fresh login.
+      description: >
+        Returns the email, the names of the passkeys, the sessions with their address and the newest 1000 rows of the
+        request log of the user. It returns no password hash, no TOTP secret, no recovery code and no public key.
+      responses:
+        '200': { description: The export. }
+        '401': { $ref: '#/components/responses/Refused' }
+  /v1/account/deletion:
+    post:
+      summary: Start the deletion of the account. Needs a fresh login.
+      description: >
+        If the account has a usable passkey, the answer is `{"method":"passkey","options":{...}}` with request options
+        whose challenge is bound to the deletion and to the user. Otherwise it is `{"method":"fresh_login"}`.
+      responses:
+        '200': { description: The method and, for a passkey, the request options. }
+        '401': { $ref: '#/components/responses/Refused' }
+  /v1/account/deletion/confirm:
+    post:
+      summary: Delete the account. Needs a fresh login and, for an account with a passkey, a fresh assertion.
+      description: >
+        One transaction deletes the user, the passkeys, the recovery codes, the recovery requests and the sessions, and
+        removes the user, the address and the user agent from the request log rows of the user. A missing, expired or
+        foreign challenge, and an assertion that does not verify, give 401 AUTHENTICATION_FAILED.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                response: { type: object, description: The assertion. Needed only when the account has a passkey. }
+      responses:
+        '204': { description: Deleted. }
+        '401': { $ref: '#/components/responses/Refused' }
+  /v1/totp:
+    delete:
+      summary: Remove the code generator. Needs a fresh factor and a usable passkey.
+      responses:
+        '204': { description: Removed. }
+        '401': { $ref: '#/components/responses/Refused' }
+        '403': { $ref: '#/components/responses/Refused' }
