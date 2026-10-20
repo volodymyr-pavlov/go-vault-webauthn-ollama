@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/volodymyr-pavlov/go-vault-webauthn-ollama/compare/v1.2.0...v1.3.0) (2026-10-20)
+
+### Features
+
+* **ai:** add the anonymizing-network risk signal ([684bea8](https://github.com/volodymyr-pavlov/go-vault-webauthn-ollama/commit/684bea8f8106e1fe4af49cd171959a899d0dc84d))
+* **geo:** read a list of address ranges ([563ddd0](https://github.com/volodymyr-pavlov/go-vault-webauthn-ollama/commit/563ddd0eb0ecbfcd2c05ec17a95df6b9c554667c))
+
 ## [1.2.0](https://github.com/volodymyr-pavlov/go-vault-webauthn-ollama/compare/v1.1.0...v1.2.0) (2026-10-20)
 
 ### Features
