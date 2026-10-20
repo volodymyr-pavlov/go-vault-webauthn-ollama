@@ -1,0 +1,13 @@
+# Installs the Go version of apps/backend/go.mod and caches the modules of the backend and of its tools module. The job
+# checks the repository out first.
+name: Set up Go
+description: Install Go for the backend and cache its modules.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: apps/backend/go.mod
+        cache-dependency-path: |
+          apps/backend/go.sum
+          apps/backend/tools/go.sum

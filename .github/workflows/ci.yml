@@ -1,0 +1,135 @@
+# Checks on every pull request and on every push to main: format, vet, the style checks, the linters, the security
+# scanners, the tests with the race detector, the fuzz tests for a few seconds, and the integration tests against
+# MySQL, Vault and the API on Docker. The workflow builds and deploys nothing. On main, the last job writes the
+# changelog and creates the version tag and the GitHub Release (see CONTRIBUTING.md). It uses the workflow's own
+# GITHUB_TOKEN.
+# Actions are pinned by commit; the tag in the comment is what the commit resolved to when it was last updated.
+# To update: git ls-remote --tags https://github.com/<action> refs/tags/<tag>, then replace the commit and tag together.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+# A new push to the same pull request or branch cancels the run that is still going. A run on main is never cancelled,
+# because the release job must finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  NODE_VERSION: '24'
+
+jobs:
+  # Every job repeats the condition below, because a workflow cannot share one. The release job commits CHANGELOG.md as "chore(release): X.Y.Z". A push made with GITHUB_TOKEN starts no workflow,
+  # so that commit is not checked again; the condition below covers the same commit pushed by hand.
+  checks:
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-go
+      - run: make fmt vet
+      - run: make check-style
+      - run: make lint
+      - run: make staticcheck
+      - run: make vulncheck
+      - run: make gosec
+      - run: make gitleaks
+      - run: make mod-verify
+      - run: make shellcheck
+
+  test:
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go
+      - run: make test-race
+      - run: make fuzz
+
+  # The integration tests start MySQL and Vault containers themselves, through dockertest, on the Docker of the runner.
+  test-integration:
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go
+      - run: make test-integration
+
+  frontend-check:
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: apps/frontend/package-lock.json
+      - run: make frontend-install
+      - run: make frontend-check
+      - run: make frontend-build
+
+  # The images and both compose files must keep building and parsing. Nothing is pushed or started.
+  docker:
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - run: make compose-config
+      - run: make docker-build
+
+  release:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    needs: [checks, test, test-integration, frontend-check, docker]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: release/package-lock.json
+      - run: npm ci --prefix release
+      - run: npx --prefix release semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,45 @@
+version: '2'
+
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - nilnil
+    - prealloc
+    - revive
+    - unconvert
+    - unparam
+    - wastedassign
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+  exclusions:
+    # Deferred Close, os.RemoveAll and the print functions may drop their errors.
+    presets:
+      - std-error-handling
+    rules:
+      # A test closes what it opened with defer and writes without reading the response. A failure shows in the assertions.
+      - linters: [errcheck]
+        path: _test\.go
+      # RFC 6238 defines TOTP over HMAC-SHA1, and the authenticator apps implement that. HMAC-SHA1 is not broken by the
+      # collision attacks on SHA-1, and the service has no choice of algorithm.
+      - linters: [gosec]
+        path: totp/
+        text: G505
+      # The synthetic dataset of the evaluation is made from a seed on purpose, so that a run is repeatable. Nothing
+      # secret is drawn from it.
+      - linters: [gosec]
+        path: cmd/evaluate/
+        text: G404
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
