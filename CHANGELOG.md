@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.4.1](https://github.com/volodymyr-pavlov/go-vault-webauthn-ollama/compare/v1.4.0...v1.4.1) (2026-10-23)
+
+### Bug Fixes
+
+* **backend:** bump Go to 1.27.3 for GO-2026-6809 ([751e19d](https://github.com/volodymyr-pavlov/go-vault-webauthn-ollama/commit/751e19d0ffa084e6b0ed4b15dd4fdff544e58c29))
+
+### Performance Improvements
+
+* **backend:** bound the cost of the purge, the geo lookups and the Vault calls ([11ccf52](https://github.com/volodymyr-pavlov/go-vault-webauthn-ollama/commit/11ccf524a0ea030e2a0b65b21920baca986a6bf9))
+
 ## [1.4.0](https://github.com/volodymyr-pavlov/go-vault-webauthn-ollama/compare/v1.3.0...v1.4.0) (2026-10-20)
 
 ### Features
