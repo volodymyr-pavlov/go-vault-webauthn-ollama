@@ -1,6 +1,6 @@
 module github.com/volodymyr-pavlov/go-vault-webauthn-ollama/apps/backend
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/Masterminds/squirrel v1.5.4
