@@ -83,3 +83,37 @@ func TestAddressBehindProxy(t *testing.T) {
 		t.Fatalf("an address that the client prepended must not win: %s", got)
 	}
 }
+
+// TestPrefixMapFindsTheLongestPrefix proves that a lookup returns the value of the longest prefix whatever the order
+// the prefixes were stored in, counts a prefix once, and keeps IPv4 and IPv6 apart.
+func TestPrefixMapFindsTheLongestPrefix(t *testing.T) {
+	var m prefixMap[string]
+	m.set(netip.MustParsePrefix("203.0.113.128/25"), "narrow")
+	m.set(netip.MustParsePrefix("203.0.113.0/24"), "wide")
+	m.set(netip.MustParsePrefix("203.0.113.0/24"), "wide again")
+	m.set(netip.MustParsePrefix("2001:db8::/32"), "six")
+
+	if m.len() != 3 {
+		t.Fatalf("a prefix counts once: %d", m.len())
+	}
+
+	if got, _ := m.lookup(netip.MustParseAddr("203.0.113.200")); got != "narrow" {
+		t.Fatalf("the longest prefix wins: %q", got)
+	}
+
+	if got, _ := m.lookup(netip.MustParseAddr("203.0.113.5")); got != "wide again" {
+		t.Fatalf("a later value replaces the earlier one: %q", got)
+	}
+
+	if got, _ := m.lookup(netip.MustParseAddr("::ffff:203.0.113.200")); got != "narrow" {
+		t.Fatalf("a mapped address counts as IPv4: %q", got)
+	}
+
+	if _, found := m.lookup(netip.MustParseAddr("2001:db9::1")); found {
+		t.Fatal("an address outside every prefix is not found")
+	}
+
+	if _, found := m.lookup(netip.Addr{}); found {
+		t.Fatal("an invalid address is not found")
+	}
+}

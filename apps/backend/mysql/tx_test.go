@@ -43,9 +43,11 @@ type callLog struct {
 	answers map[string]fakeRows
 
 	// execErrs holds the error that a statement returns. affected holds the number of rows that it changes. A
-	// statement that is not in affected changes one row.
-	execErrs map[string]error
-	affected map[string]int64
+	// statement that is not in affected changes one row. affectedRuns holds one count for each run of a statement, in
+	// order, and takes priority over affected while it has counts left.
+	execErrs     map[string]error
+	affected     map[string]int64
+	affectedRuns map[string][]int64
 
 	// lastID is the key that every insert reports.
 	lastID int64
@@ -53,10 +55,11 @@ type callLog struct {
 
 func newCallLog() *callLog {
 	return &callLog{
-		answers:  map[string]fakeRows{},
-		execErrs: map[string]error{},
-		affected: map[string]int64{},
-		lastID:   7,
+		answers:      map[string]fakeRows{},
+		execErrs:     map[string]error{},
+		affected:     map[string]int64{},
+		affectedRuns: map[string][]int64{},
+		lastID:       7,
 	}
 }
 
@@ -160,6 +163,11 @@ func (c *fakeConn) ExecContext(_ context.Context, query string, named []driver.N
 	affected, ok := c.log.affected[query]
 	if !ok {
 		affected = 1
+	}
+
+	if runs := c.log.affectedRuns[query]; len(runs) > 0 {
+		affected = runs[0]
+		c.log.affectedRuns[query] = runs[1:]
 	}
 
 	return fakeResult{

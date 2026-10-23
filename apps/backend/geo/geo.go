@@ -39,19 +39,13 @@ func (p Place) Known() bool {
 	return p.Country != ""
 }
 
-// row is one line of the table: an address prefix and its [Place].
-type row struct {
-	prefix netip.Prefix
-	place  Place
-}
-
 // Locator finds the client address of a request and places an address with the table. [New] builds it.
 type Locator struct {
 	// TrustedProxies are the address prefixes of the peers that may set the X-Forwarded-For header, such as the reverse
 	// proxy that ends TLS. [Locator.Address] ignores the header of any other peer.
 	TrustedProxies []netip.Prefix
 
-	rows []row
+	places prefixMap[Place]
 }
 
 // New returns a [Locator] that uses the embedded table and trusts the X-Forwarded-For header of the peers in proxies.
@@ -89,13 +83,10 @@ func New(proxies []netip.Prefix) (*Locator, error) {
 			return nil, fmt.Errorf("table line %d: %w", line, err)
 		}
 
-		locator.rows = append(locator.rows, row{
-			prefix: prefix,
-			place: Place{
-				Country:   strings.TrimSpace(fields[1]),
-				Latitude:  latitude,
-				Longitude: longitude,
-			},
+		locator.places.set(prefix, Place{
+			Country:   strings.TrimSpace(fields[1]),
+			Latitude:  latitude,
+			Longitude: longitude,
 		})
 	}
 
@@ -156,16 +147,9 @@ func (l *Locator) trusts(address netip.Addr) bool {
 // Place returns the [Place] of address. It uses the longest prefix of the table that contains the address. It returns
 // the zero Place if no prefix contains it.
 func (l *Locator) Place(address netip.Addr) Place {
-	var best Place
-	bits := -1
-	for _, r := range l.rows {
-		if r.prefix.Contains(address) && r.prefix.Bits() > bits {
-			best = r.place
-			bits = r.prefix.Bits()
-		}
-	}
+	place, _ := l.places.lookup(address)
 
-	return best
+	return place
 }
 
 // Distance returns the great-circle distance between the places a and b, in kilometres.

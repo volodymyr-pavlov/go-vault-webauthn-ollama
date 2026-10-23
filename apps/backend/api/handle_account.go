@@ -9,6 +9,7 @@ import (
 
 	"github.com/tidwall/gjson"
 	"github.com/valyala/fasthttp"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/volodymyr-pavlov/go-vault-webauthn-ollama/apps/backend/clock"
 	"github.com/volodymyr-pavlov/go-vault-webauthn-ollama/apps/backend/es"
@@ -22,6 +23,10 @@ var _ web.Handler = &ListAccountsHandler{}
 var _ web.Handler = &RemoveAccountHandler{}
 
 var addAuthenticatorHandlerBodyArgsPool web.Pool[AddAccountHandlerBodyArgs]
+
+// VaultConcurrency is the number of Vault calls that one request of the account handlers runs at a time. An import or
+// a listing touches one key for each account, and the calls are independent, so they run side by side.
+const VaultConcurrency = 8
 
 // AccountView describes one account of the authenticator. It never holds a secret.
 type AccountView struct {
@@ -150,33 +155,58 @@ func (h *AddAccountHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	}
 
 	items := make([]es.Account, 0, len(accounts))
+	secrets := make([]string, 0, len(accounts))
 
 	for _, account := range accounts {
 		xid := h.AccountSnowflake.Next()
-		name := fmt.Sprintf("u%d-a%d", user.UserXID, xid)
-
-		_, err := h.AuthenticatorKeyWriter.WriteOne(ctx, es.AuthenticatorKey{
-			Name:      name,
-			Secret:    base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(account.Secret),
-			Issuer:    account.Issuer,
-			Label:     account.Label,
-			Algorithm: account.Algorithm,
-			Digits:    account.Digits,
-			Period:    account.Period,
-		}, es.WriteCreate)
-		if err != nil {
-			return errors.Join(fmt.Errorf("store a secret in Vault: %w", err), h.forget(ctx, items))
-		}
 
 		items = append(items, es.Account{
 			AccountXID: xid,
-			VaultKey:   name,
+			VaultKey:   fmt.Sprintf("u%d-a%d", user.UserXID, xid),
 			Issuer:     account.Issuer,
 			Label:      account.Label,
 			Algorithm:  account.Algorithm,
 			Digits:     account.Digits,
 			Period:     account.Period,
 		})
+		secrets = append(secrets, base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(account.Secret))
+	}
+
+	// The keys go to Vault side by side. A failed call stops the others, and the keys that made it are deleted again.
+	created := make([]bool, len(items))
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(VaultConcurrency)
+
+	for i, item := range items {
+		group.Go(func() error {
+			_, err := h.AuthenticatorKeyWriter.WriteOne(groupCtx, es.AuthenticatorKey{
+				Name:      item.VaultKey,
+				Secret:    secrets[i],
+				Issuer:    item.Issuer,
+				Label:     item.Label,
+				Algorithm: item.Algorithm,
+				Digits:    item.Digits,
+				Period:    item.Period,
+			}, es.WriteCreate)
+			if err != nil {
+				return fmt.Errorf("store a secret in Vault: %w", err)
+			}
+
+			created[i] = true
+
+			return nil
+		})
+	}
+
+	if err := group.Wait(); err != nil {
+		made := make([]es.Account, 0, len(items))
+		for i, item := range items {
+			if created[i] {
+				made = append(made, item)
+			}
+		}
+
+		return errors.Join(err, h.forget(ctx, made))
 	}
 
 	written, err := h.AccountGroupWriter.WriteOne(ctx, es.AccountGroup{
@@ -205,18 +235,28 @@ func (h *AddAccountHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 	return web.Write(ctx, fasthttp.StatusCreated, result)
 }
 
-// forget deletes the keys of items from Vault. It runs after a failure, so it does not stop when the request ends.
+// forget deletes the keys of items from Vault, [VaultConcurrency] at a time. It runs after a failure, so it does not
+// stop when the request ends or when one delete fails, and it returns the errors of all the deletes that failed.
 func (h *AddAccountHandler) forget(ctx *fasthttp.RequestCtx, items []es.Account) error {
-	var failures []error
+	failures := make([]error, len(items))
 
-	for _, item := range items {
-		_, err := h.AuthenticatorKeyWriter.WriteOne(ctx, es.AuthenticatorKey{
-			Name: item.VaultKey,
-		}, es.DeleteAuthenticatorKey)
-		if err != nil {
-			failures = append(failures, fmt.Errorf("delete a secret from Vault: %w", err))
-		}
+	var group errgroup.Group
+	group.SetLimit(VaultConcurrency)
+
+	for i, item := range items {
+		group.Go(func() error {
+			_, err := h.AuthenticatorKeyWriter.WriteOne(ctx, es.AuthenticatorKey{
+				Name: item.VaultKey,
+			}, es.DeleteAuthenticatorKey)
+			if err != nil {
+				failures[i] = fmt.Errorf("delete a secret from Vault: %w", err)
+			}
+
+			return nil
+		})
 	}
+
+	_ = group.Wait()
 
 	return errors.Join(failures...)
 }
@@ -280,26 +320,38 @@ func (h *ListAccountsHandler) ServeHTTP(ctx *fasthttp.RequestCtx) error {
 
 	now := h.SystemClock.Now()
 	result := ListAccountsHandlerResult{
-		Accounts: make([]AccountCode, 0, len(stored)),
+		Accounts: make([]AccountCode, len(stored)),
 	}
 
-	for _, item := range stored {
-		entry := AccountCode{
-			AccountView: accountView(item),
-			ValidFor:    int64(item.Period) - now.Unix()%int64(item.Period),
-		}
+	// The codes come from Vault side by side, each into its own slot, so the order of the rows stays.
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(VaultConcurrency)
 
-		key, err := h.AuthenticatorKeyReader.ReadOne(ctx, es.AuthenticatorKey{
-			Name: item.VaultKey,
-		}, 0)
-		if errors.Is(err, es.ErrNotFound) {
-			entry.Unavailable = true
-		} else if err != nil {
-			return fmt.Errorf("read a code from Vault: %w", err)
-		}
+	for i, item := range stored {
+		group.Go(func() error {
+			entry := AccountCode{
+				AccountView: accountView(item),
+				ValidFor:    int64(item.Period) - now.Unix()%int64(item.Period),
+			}
 
-		entry.Code = key.Code
-		result.Accounts = append(result.Accounts, entry)
+			key, err := h.AuthenticatorKeyReader.ReadOne(groupCtx, es.AuthenticatorKey{
+				Name: item.VaultKey,
+			}, 0)
+			if errors.Is(err, es.ErrNotFound) {
+				entry.Unavailable = true
+			} else if err != nil {
+				return fmt.Errorf("read a code from Vault: %w", err)
+			}
+
+			entry.Code = key.Code
+			result.Accounts[i] = entry
+
+			return nil
+		})
+	}
+
+	if err := group.Wait(); err != nil {
+		return err
 	}
 
 	return web.Write(ctx, fasthttp.StatusOK, result)

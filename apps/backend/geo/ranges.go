@@ -2,13 +2,12 @@ package geo
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/netip"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,15 +21,7 @@ const MaxRangesFileSize = 16 << 20
 // Ranges is a set of address prefixes. The service uses one to tell the addresses of VPN, proxy and hosting providers
 // from the addresses of people at home. The zero value and a nil pointer are empty sets.
 type Ranges struct {
-	// v4 and v6 map the length of a prefix to the set of masked prefix addresses of that length.
-	v4 map[int]map[netip.Addr]struct{}
-	v6 map[int]map[netip.Addr]struct{}
-
-	// lengths4 and lengths6 are the prefix lengths in use, longest first, so a lookup tries each length once.
-	lengths4 []int
-	lengths6 []int
-
-	count int
+	prefixes prefixMap[struct{}]
 }
 
 // ReadRanges reads a file of address prefixes, one on each line. An empty line is skipped, and so is everything after a
@@ -41,7 +32,13 @@ type Ranges struct {
 func ReadRanges(path string) (*Ranges, error) {
 	path = filepath.Clean(path)
 
-	info, err := os.Stat(path)
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("read the ranges file: %w", err)
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("read the ranges file: %w", err)
 	}
@@ -50,17 +47,9 @@ func ReadRanges(path string) (*Ranges, error) {
 		return nil, fmt.Errorf("%w: the file has %d bytes, the limit is %d", ErrRanges, info.Size(), MaxRangesFileSize)
 	}
 
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read the ranges file: %w", err)
-	}
+	ranges := &Ranges{}
 
-	ranges := &Ranges{
-		v4: map[int]map[netip.Addr]struct{}{},
-		v6: map[int]map[netip.Addr]struct{}{},
-	}
-
-	scanner := bufio.NewScanner(bytes.NewReader(raw))
+	scanner := bufio.NewScanner(io.LimitReader(file, MaxRangesFileSize))
 	for line := 1; scanner.Scan(); line++ {
 		text, _, _ := strings.Cut(scanner.Text(), "#")
 
@@ -91,36 +80,12 @@ func ReadRanges(path string) (*Ranges, error) {
 			return nil, fmt.Errorf("line %d: %w", line, ErrRanges)
 		}
 
-		sets := ranges.v6
-		if prefix.Addr().Is4() {
-			sets = ranges.v4
-		}
-
-		if sets[prefix.Bits()] == nil {
-			sets[prefix.Bits()] = map[netip.Addr]struct{}{}
-		}
-
-		if _, seen := sets[prefix.Bits()][prefix.Addr()]; !seen {
-			ranges.count++
-		}
-
-		sets[prefix.Bits()][prefix.Addr()] = struct{}{}
+		ranges.prefixes.set(prefix, struct{}{})
 	}
 
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("read the ranges file: %w", err)
 	}
-
-	for bits := range ranges.v4 {
-		ranges.lengths4 = append(ranges.lengths4, bits)
-	}
-
-	for bits := range ranges.v6 {
-		ranges.lengths6 = append(ranges.lengths6, bits)
-	}
-
-	slices.SortFunc(ranges.lengths4, func(a, b int) int { return b - a })
-	slices.SortFunc(ranges.lengths6, func(a, b int) int { return b - a })
 
 	return ranges, nil
 }
@@ -131,35 +96,19 @@ func (r *Ranges) Len() int {
 		return 0
 	}
 
-	return r.count
+	return r.prefixes.len()
 }
 
 // Contains reports whether the address is inside one of the prefixes. An invalid address is in no prefix, and an IPv4
 // address in IPv6 form counts as an IPv4 address.
 func (r *Ranges) Contains(address netip.Addr) bool {
-	if r == nil || !address.IsValid() {
+	if r == nil {
 		return false
 	}
 
-	address = address.Unmap()
+	_, found := r.prefixes.lookup(address)
 
-	sets, lengths := r.v6, r.lengths6
-	if address.Is4() {
-		sets, lengths = r.v4, r.lengths4
-	}
-
-	for _, bits := range lengths {
-		prefix, err := address.Prefix(bits)
-		if err != nil {
-			continue
-		}
-
-		if _, found := sets[bits][prefix.Addr()]; found {
-			return true
-		}
-	}
-
-	return false
+	return found
 }
 
 // RangesRefreshInterval is how often [RangesFile.Run] looks at the file for a change.

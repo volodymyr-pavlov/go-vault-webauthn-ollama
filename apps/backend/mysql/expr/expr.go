@@ -188,7 +188,8 @@ var RecoveryRequestsOpen string
 //go:embed use_up_recovery_grant.sql
 var UseUpRecoveryGrant string
 
-// DeleteExpiredSessions deletes the sessions that expired before a time. SessionWriter runs it.
+// DeleteExpiredSessions deletes at most a given number of the sessions that expired before a time. SessionWriter runs it
+// until a run deletes fewer rows than the limit.
 //
 //go:embed delete_expired_sessions.sql
 var DeleteExpiredSessions string

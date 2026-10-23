@@ -124,27 +124,39 @@ func (s *SessionWriter) WriteOne(ctx context.Context, item es.Session, op es.Op)
 	return item, es.ErrNoArguments
 }
 
-// purge deletes the sessions that expired before cutoff and returns how many it deleted.
+// PurgeBatchSize is the number of sessions that one delete statement of a purge removes. A purge runs the statement
+// until one removes fewer rows, so a backlog goes in short transactions instead of one long lock.
+const PurgeBatchSize = 1000
+
+// purge deletes the sessions that expired before cutoff, [PurgeBatchSize] at a time, and returns how many it deleted.
 func (s *SessionWriter) purge(ctx context.Context, cutoff time.Time) (uint64, error) {
 	if cutoff.IsZero() {
 		return 0, es.ErrNoArguments
 	}
 
-	result, err := s.Database.ExecContext(ctx, expr.DeleteExpiredSessions, cutoff)
-	if err != nil {
-		return 0, fmt.Errorf("delete the expired sessions: %w", err)
-	}
+	total := uint64(0)
 
-	deleted, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("count the deleted sessions: %w", err)
-	}
+	for {
+		result, err := s.Database.ExecContext(ctx, expr.DeleteExpiredSessions, cutoff, PurgeBatchSize)
+		if err != nil {
+			return total, fmt.Errorf("delete the expired sessions: %w", err)
+		}
 
-	if deleted < 0 {
-		return 0, fmt.Errorf("count the deleted sessions: negative count %d", deleted)
-	}
+		deleted, err := result.RowsAffected()
+		if err != nil {
+			return total, fmt.Errorf("count the deleted sessions: %w", err)
+		}
 
-	return uint64(deleted), nil
+		if deleted < 0 {
+			return total, fmt.Errorf("count the deleted sessions: negative count %d", deleted)
+		}
+
+		total += uint64(deleted)
+
+		if deleted < PurgeBatchSize {
+			return total, nil
+		}
+	}
 }
 
 func (s *SessionWriter) createOne(ctx context.Context, session es.Session) (es.Session, error) {
